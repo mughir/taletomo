@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ app_name }}{% endblock %} — AI Web-Novel Maker</title>
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header role="banner">
+    <nav class="navbar" aria-label="Main Navigation">
+      <a href="{% url 'taletomo:home' %}" class="navbar-brand">
+        <span aria-hidden="true">⭐</span>
+        <strong>{{ app_name }}</strong>
+        <span style="font-size: 0.85rem; font-weight: normal; color: var(--text-muted); margin-left: 8px;">
+          Tomo
+        </span>
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="{% url 'taletomo:project_list' %}">Projects</a></li>
+        <li><a href="{% url 'taletomo:project_new' %}" class="btn btn-primary btn-sm">+ New Novel</a></li>
+        <li><a href="{% url 'taletomo:job_list' %}">Jobs</a></li>
+        <li><a href="{% url 'taletomo:settings_providers' %}">AI Providers</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main-content" class="main-container" role="main">
+    {% if messages %}
+      <div class="messages-container" aria-live="polite">
+        {% for message in messages %}
+          <div class="message message-{{ message.tags|default:'info' }}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{% static 'js/vendor/vue.global.prod.js' %}"></script>
+  <script src="{% static 'js/app.js' %}"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

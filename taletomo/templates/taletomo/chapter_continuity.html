@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Continuity Center — Chapter {{ chapter.chapter_number }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+  <div>
+    <h1 style="font-size: 2rem; font-weight: 700;">Continuity Center — Chapter {{ chapter.chapter_number }}</h1>
+    <p style="color: var(--text-secondary);">Evidence-backed story contradictions and author override management.</p>
+  </div>
+  <a href="{% url 'taletomo:chapter_edit' project.id chapter.id %}" class="btn btn-secondary">Back to Editor</a>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Detected Findings ({{ findings.count }})</h2>
+  </div>
+
+  {% if findings %}
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      {% for f in findings %}
+        <div style="padding: 16px; background: var(--bg-subtle); border-radius: var(--radius-md); border-left: 4px solid {% if f.severity == 'blocker' %}var(--danger){% elif f.severity == 'warning' %}var(--warning){% else %}var(--primary){% endif %};">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <span class="badge {% if f.severity == 'blocker' %}badge-blocker{% elif f.severity == 'warning' %}badge-warning{% else %}badge-subtle{% endif %}">
+                {{ f.get_severity_display }}
+              </span>
+              <strong style="margin-left: 8px; font-size: 1.05rem;">{{ f.get_category_display }}</strong>
+            </div>
+            <span class="badge badge-subtle">Status: {{ f.get_status_display }}</span>
+          </div>
+
+          <p style="font-size: 1rem; margin-top: 8px; color: var(--text-primary);">
+            <strong>Claim:</strong> {{ f.claim }}
+          </p>
+
+          {% if f.conflicting_evidence %}
+            <div style="margin-top: 8px; font-size: 0.9rem; color: var(--text-secondary);">
+              <strong>Conflicting Evidence:</strong>
+              <ul style="padding-left: 20px; margin-top: 4px;">
+                {% for ev in f.conflicting_evidence %}
+                  <li>{{ ev }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+
+          {% if f.suggested_action %}
+            <p style="margin-top: 8px; font-size: 0.9rem; color: var(--primary);">
+              <strong>Suggested Action:</strong> {{ f.suggested_action }}
+            </p>
+          {% endif %}
+
+          {% if f.override_rationale %}
+            <p style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted); font-style: italic;">
+              Author Rationale: "{{ f.override_rationale }}"
+            </p>
+          {% endif %}
+
+          <!-- Resolution Actions -->
+          <div style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <form method="post" action="{% url 'taletomo:finding_update' f.id %}" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              {% csrf_token %}
+              <input type="text" name="rationale" class="form-control" style="max-width: 300px;" placeholder="Optional override rationale...">
+              <button type="submit" name="status" value="fixed" class="btn btn-secondary btn-sm">Mark Fixed</button>
+              <button type="submit" name="status" value="intentional" class="btn btn-secondary btn-sm">Mark Intentional</button>
+              <button type="submit" name="status" value="dismissed" class="btn btn-secondary btn-sm">Dismiss</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p style="color: var(--text-muted); padding: 16px 0;">No continuity issues detected for Chapter {{ chapter.chapter_number }}.</p>
+  {% endif %}
+</div>
+{% endblock %}

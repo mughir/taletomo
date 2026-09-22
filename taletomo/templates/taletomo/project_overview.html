@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.title }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+  <h1 style="font-size: 2rem; font-weight: 700;">{{ project.title }}</h1>
+  <p style="color: var(--text-secondary);">{{ project.premise }}</p>
+</div>
+
+{% include "taletomo/_project_subnav.html" with active_tab="overview" %}
+
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Novel Health & Progress</h2>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px;">
+        <div style="padding: 16px; background: var(--bg-subtle); border-radius: var(--radius-md); text-align: center;">
+          <div style="font-size: 2rem; font-weight: 700; color: var(--primary);">{{ approved_count }} / {{ project.target_chapters }}</div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">Approved Chapters</div>
+        </div>
+
+        <div style="padding: 16px; background: var(--bg-subtle); border-radius: var(--radius-md); text-align: center;">
+          <div style="font-size: 2rem; font-weight: 700; color: var(--text-primary);">{{ project.active_branch_head }}</div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">Current Canon Revision</div>
+        </div>
+
+        <div style="padding: 16px; background: var(--bg-subtle); border-radius: var(--radius-md); text-align: center;">
+          <div style="font-size: 2rem; font-weight: 700; color: {% if open_findings > 0 %}var(--danger){% else %}var(--success){% endif %};">
+            {{ open_findings }}
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">Open Continuity Issues</div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-primary">Open Outline & Plan</a>
+        <a href="{% url 'taletomo:project_bible' project.id %}" class="btn btn-secondary">Tomo's Memory (Bible)</a>
+        <a href="{% url 'taletomo:project_export' project.id %}" class="btn btn-secondary">Export Novel</a>
+      </div>
+    </div>
+
+    {% if spine and spine.major_milestones %}
+      <div class="card">
+        <div class="card-header">
+          <h2>Series Spine Milestones</h2>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          {% for m in spine.major_milestones %}
+            <div style="display: flex; gap: 16px; align-items: center; padding: 10px; background: var(--bg-subtle); border-radius: var(--radius-md);">
+              <span class="badge badge-subtle">Chapter {{ m.chapter }}</span>
+              <span>{{ m.event }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Novel Settings</h2>
+      </div>
+      <dl style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">
+        <dt style="color: var(--text-muted);">Target Chapters:</dt>
+        <dd>{{ project.target_chapters }}</dd>
+
+        <dt style="color: var(--text-muted);">Target Words/Ch:</dt>
+        <dd>{{ project.target_words_per_chapter }} words</dd>
+
+        <dt style="color: var(--text-muted);">Genre:</dt>
+        <dd>{{ project.genre }}</dd>
+
+        <dt style="color: var(--text-muted);">Tone:</dt>
+        <dd>{{ project.tone }}</dd>
+
+        <dt style="color: var(--text-muted);">POV:</dt>
+        <dd>{{ project.pov }}</dd>
+
+        <dt style="color: var(--text-muted);">Tense:</dt>
+        <dd>{{ project.tense }}</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+{% endblock %}

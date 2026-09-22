@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+  <h1 style="font-size: 2rem; font-weight: 700;">Generation Workflows & Jobs</h1>
+  <p style="color: var(--text-secondary);">Durable background workflows, worker leases, and execution audit history.</p>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+    <thead>
+      <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border-color); font-size: 0.85rem; color: var(--text-secondary);">
+        <th style="padding: 12px 16px;">Job ID</th>
+        <th style="padding: 12px 16px;">Project</th>
+        <th style="padding: 12px 16px;">Type</th>
+        <th style="padding: 12px 16px;">Status</th>
+        <th style="padding: 12px 16px;">Progress</th>
+        <th style="padding: 12px 16px;">Confirmed Tokens</th>
+        <th style="padding: 12px 16px;">Created</th>
+        <th style="padding: 12px 16px; text-align: right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+        <tr style="border-bottom: 1px solid var(--border-color); font-size: 0.95rem;">
+          <td style="padding: 12px 16px; font-family: var(--font-mono); font-size: 0.85rem;">{{ j.id|stringformat:".8s" }}...</td>
+          <td style="padding: 12px 16px; font-weight: 600;">{{ j.project.title }}</td>
+          <td style="padding: 12px 16px;">{{ j.job_type }}</td>
+          <td style="padding: 12px 16px;">
+            <span class="badge {% if j.status == 'ready' %}badge-success{% elif j.status == 'failed' %}badge-blocker{% else %}badge-subtle{% endif %}">
+              {{ j.status }}
+            </span>
+          </td>
+          <td style="padding: 12px 16px;">{{ j.progress_pct }}%</td>
+          <td style="padding: 12px 16px;">{{ j.confirmed_tokens }} tokens</td>
+          <td style="padding: 12px 16px; color: var(--text-muted); font-size: 0.85rem;">{{ j.created_at|date:"Y-m-d H:i" }}</td>
+          <td style="padding: 12px 16px; text-align: right;">
+            <a href="{% url 'taletomo:job_detail' j.id %}" class="btn btn-secondary btn-sm">Inspect</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="8" style="padding: 24px; text-align: center; color: var(--text-muted);">
+            No background jobs found.
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

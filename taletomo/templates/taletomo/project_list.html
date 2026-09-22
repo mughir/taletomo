@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}All Novels — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+  <div>
+    <h1 style="font-size: 1.8rem; font-weight: 700;">My Web-Novels</h1>
+    <p style="color: var(--text-secondary);">Manage, outline, and draft long-form web-novels from 1 to 4,000 chapters.</p>
+  </div>
+  <div style="display: flex; gap: 12px;">
+    <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">+ New Novel</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Restore Project Backup</h2>
+  </div>
+  <form method="post" action="{% url 'taletomo:project_restore' %}" enctype="multipart/form-data" style="display: flex; gap: 12px; align-items: center;">
+    {% csrf_token %}
+    <input type="file" name="backup_file" accept=".json" required class="form-control" style="max-width: 320px;">
+    <button type="submit" class="btn btn-secondary">Restore from JSON</button>
+  </form>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
+  {% for p in projects %}
+    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <h2 style="font-size: 1.3rem;"><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h2>
+          <span class="badge badge-subtle">{{ p.target_chapters }} Chs</span>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 12px;">{{ p.premise|truncatewords:25 }}</p>
+        <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+          <span><strong>Genre:</strong> {{ p.genre }}</span>
+          <span>•</span>
+          <span><strong>Tone:</strong> {{ p.tone }}</span>
+          <span>•</span>
+          <span><strong>Head:</strong> {{ p.active_branch_head }}</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+        <a href="{% url 'taletomo:project_overview' p.id %}" class="btn btn-secondary btn-sm" style="flex: 1;">Overview</a>
+        <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-primary btn-sm" style="flex: 1;">Outline</a>
+      </div>
+    </div>
+  {% empty %}
+    <p style="color: var(--text-muted);">No projects found.</p>
+  {% endfor %}
+</div>
+{% endblock %}

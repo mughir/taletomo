@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Tomo's Memory (Story Bible) — {{ project.title }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+  <h1 style="font-size: 2rem; font-weight: 700;">Tomo's Memory (Series Bible)</h1>
+  <p style="color: var(--text-secondary);">Canonical worldbuilding, reader promises, tone anchors, and style constraints for {{ project.title }}.</p>
+</div>
+
+{% include "taletomo/_project_subnav.html" with active_tab="bible" %}
+
+<form method="post" class="card">
+  {% csrf_token %}
+
+  <div class="form-group">
+    <label for="id_pitch" class="form-label">Series Elevator Pitch</label>
+    <textarea id="id_pitch" name="pitch" class="form-control" rows="2">{{ bible.pitch }}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="id_hook" class="form-label">Core Narrative Hook</label>
+    <input type="text" id="id_hook" name="hook" class="form-control" value="{{ bible.hook }}">
+  </div>
+
+  <div class="form-group">
+    <label for="id_reader_promise" class="form-label">Reader Promise & Tropes</label>
+    <input type="text" id="id_reader_promise" name="reader_promise" class="form-control" value="{{ bible.reader_promise }}">
+  </div>
+
+  <div class="form-group">
+    <label for="id_central_conflict" class="form-label">Central Conflict & Overarching Antagonist</label>
+    <textarea id="id_central_conflict" name="central_conflict" class="form-control" rows="3">{{ bible.central_conflict }}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="id_world_setting" class="form-label">World Setting & Magic / Tech Constraints</label>
+    <textarea id="id_world_setting" name="world_setting" class="form-control" rows="4">{{ bible.world_setting }}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="id_prose_style_guide" class="form-label">Prose Voice & Style Constraints</label>
+    <textarea id="id_prose_style_guide" name="prose_style_guide" class="form-control" rows="3">{{ bible.prose_style_guide }}</textarea>
+  </div>
+
+  <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
+    <button type="submit" class="btn btn-primary">Save Tomo's Memory</button>
+  </div>
+</form>
+{% endblock %}

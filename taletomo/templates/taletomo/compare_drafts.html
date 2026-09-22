@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Drafts — {{ project.title }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+  <h1 style="font-size: 2rem; font-weight: 700;">Compare Draft Versions</h1>
+  <p style="color: var(--text-secondary);">
+    Comparing Draft v{{ left_draft.version_number }} against Draft v{{ right_draft.version_number }}
+  </p>
+</div>
+
+<div class="card">
+  <div class="diff-container">{{ diff_text }}</div>
+</div>
+{% endblock %}

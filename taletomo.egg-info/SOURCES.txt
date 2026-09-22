@@ -1,0 +1,6 @@
+pyproject.toml
+taletomo.egg-info/PKG-INFO
+taletomo.egg-info/SOURCES.txt
+taletomo.egg-info/dependency_links.txt
+taletomo.egg-info/requires.txt
+taletomo.egg-info/top_level.txt

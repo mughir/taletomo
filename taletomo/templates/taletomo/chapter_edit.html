@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Write Chapter {{ chapter.chapter_number }} — {{ project.title }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <h1 style="font-size: 1.8rem; font-weight: 700;">Chapter {{ chapter.chapter_number }}: {{ chapter.title|default:"Drafting" }}</h1>
+      <span class="badge {% if chapter.status == 'approved' or chapter.status == 'locked' %}badge-success{% elif chapter.status == 'review' %}badge-warning{% else %}badge-subtle{% endif %}">
+        {{ chapter.get_status_display }}
+      </span>
+    </div>
+    <p style="font-size: 0.9rem; color: var(--text-secondary);">
+      Target: {{ chapter.plan.target_words|default:project.target_words_per_chapter }} words • 
+      <span id="word-count-display">0 words</span> • 
+      Revision Head: <code>{{ project.active_branch_head }}</code>
+    </p>
+  </div>
+
+  <div style="display: flex; gap: 8px;">
+    <!-- Ask Tomo to Generate Draft -->
+    <form method="post" action="{% url 'taletomo:chapter_generate' project.id chapter.id %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary" {% if chapter.status == 'locked' %}disabled title="Chapter is locked"{% endif %}>
+        ✨ Ask Tomo (Generate Draft)
+      </button>
+    </form>
+
+    <a href="{% url 'taletomo:chapter_plan' project.id chapter.id %}" class="btn btn-secondary">Contract</a>
+    <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-secondary">Outline</a>
+  </div>
+</div>
+
+{% if blockers_count > 0 %}
+  <div class="message message-error" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <strong>⚠️ Deterministic Contradiction Detected ({{ blockers_count }} Blocker):</strong>
+      Draft contains physical injury, identity, or world rule violations.
+    </div>
+    <a href="{% url 'taletomo:chapter_continuity' project.id chapter.id %}" class="btn btn-danger btn-sm">Review Findings</a>
+  </div>
+{% endif %}
+
+<div class="editor-grid">
+  <!-- Left Column: Nearby Chapter Navigator -->
+  <aside class="editor-column" aria-label="Chapter Navigator">
+    <h2 style="font-size: 1rem; font-weight: 700; margin-bottom: 12px;">Nearby Chapters</h2>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      {% if prev_chapter %}
+        <a href="{% url 'taletomo:chapter_edit' project.id prev_chapter.id %}" class="btn btn-secondary btn-sm" style="text-align: left; justify-content: flex-start;">
+          ← Ch {{ prev_chapter.chapter_number }}: {{ prev_chapter.title|default:"Previous"|truncatechars:18 }}
+        </a>
+      {% endif %}
+
+      <div style="padding: 8px 12px; background: var(--bg-subtle); border-left: 3px solid var(--primary); font-weight: 700; font-size: 0.9rem;">
+        Ch {{ chapter.chapter_number }} (Active)
+      </div>
+
+      {% if next_chapter %}
+        <a href="{% url 'taletomo:chapter_edit' project.id next_chapter.id %}" class="btn btn-secondary btn-sm" style="text-align: left; justify-content: flex-start;">
+          → Ch {{ next_chapter.chapter_number }}: {{ next_chapter.title|default:"Next"|truncatechars:18 }}
+        </a>
+      {% endif %}
+    </div>
+
+    {% if drafts %}
+      <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border-color);">
+      <h3 style="font-size: 0.9rem; font-weight: 600; margin-bottom: 8px;">Version History</h3>
+      <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem;">
+        {% for d in drafts %}
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; border-radius: var(--radius-sm); {% if d.id == active_draft.id %}background: var(--bg-subtle); font-weight: 700;{% endif %}">
+            <span>v{{ d.version_number }} ({{ d.word_count }}w)</span>
+            <span class="badge badge-subtle">{{ d.status }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </aside>
+
+  <!-- Center Column: Manuscript Editor & Diff -->
+  <section class="editor-column">
+    <form method="post" id="manuscript-editor">
+      {% csrf_token %}
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-weight: 600; font-size: 0.95rem;">
+          Manuscript Prose {% if active_draft %}(Draft v{{ active_draft.version_number }}){% endif %}
+        </span>
+        <button type="submit" class="btn btn-secondary btn-sm" {% if chapter.status == 'locked' %}disabled{% endif %}>
+          Save Manual Edit (New v)
+        </button>
+      </div>
+
+      <textarea id="prose-textarea" name="prose_content" class="manuscript-textarea" {% if chapter.status == 'locked' %}readonly{% endif %} placeholder="Write prose or click 'Ask Tomo' to generate from contract...">{{ active_draft.prose_content|default:"" }}</textarea>
+    </form>
+
+    <!-- Two-Phase Approval Controls -->
+    <div style="margin-top: 20px; padding: 16px; background: var(--bg-subtle); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 12px;">
+      <h3 style="font-size: 1rem; font-weight: 700;">Two-Phase Canon Approval</h3>
+
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <!-- Phase 1: Approve Draft Prose -->
+        {% if chapter.status != 'locked' and chapter.status != 'approved' and active_draft %}
+          <form method="post" action="{% url 'taletomo:chapter_approve_draft' project.id chapter.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary">
+              Step 1: Approve Draft Prose
+            </button>
+          </form>
+        {% elif active_draft and active_draft.status == 'accepted' %}
+          <span class="badge badge-success">✓ Prose Draft Approved</span>
+        {% endif %}
+
+        <!-- Phase 2: Atomic Canon Commit -->
+        {% if chapter.status != 'locked' and active_draft %}
+          <form method="post" action="{% url 'taletomo:chapter_commit_canon' project.id chapter.id %}" style="display: flex; gap: 8px; align-items: center;">
+            {% csrf_token %}
+            <input type="hidden" name="expected_head" value="{{ project.active_branch_head }}">
+            <input type="text" name="summary" class="form-control" style="width: 260px;" placeholder="Summary of events..." value="{{ chapter.current_summary|default:'' }}">
+            <button type="submit" class="btn btn-success" {% if blockers_count > 0 %}disabled title="Resolve blocker findings first"{% endif %}>
+              Step 2: Commit Canon & Lock Chapter
+            </button>
+          </form>
+        {% elif chapter.status == 'locked' %}
+          <span class="badge badge-success" style="font-size: 0.95rem; padding: 6px 12px;">
+            🔒 Locked & Committed to {{ project.active_branch_head }}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Unified Diff with Parent Draft -->
+    {% if diff_html %}
+      <div style="margin-top: 24px;">
+        <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 8px;">Changes from Previous Draft</h3>
+        <div class="diff-container">{{ diff_html }}</div>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- Right Column: Tomo Assistant Drawer (Interactive Island) -->
+  <aside class="editor-column" id="tomo-drawer" aria-label="Tomo Assistant Drawer">
+    <div style="display: flex; gap: 4px; border-bottom: 1px solid var(--border-color); margin-bottom: 12px; padding-bottom: 6px;">
+      <button type="button" @click="activeTab = 'checks'" :class="['btn', 'btn-sm', activeTab === 'checks' ? 'btn-primary' : 'btn-secondary']">Checks</button>
+      <button type="button" @click="activeTab = 'context'" :class="['btn', 'btn-sm', activeTab === 'context' ? 'btn-primary' : 'btn-secondary']">Context</button>
+      <button type="button" @click="activeTab = 'notes'" :class="['btn', 'btn-sm', activeTab === 'notes' ? 'btn-primary' : 'btn-secondary']">Notes</button>
+    </div>
+
+    <!-- Checks Tab -->
+    <div v-show="activeTab === 'checks'">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h3 style="font-size: 0.95rem; font-weight: 700;">Continuity Checks</h3>
+        <a href="{% url 'taletomo:chapter_continuity' project.id chapter.id %}" style="font-size: 0.8rem;">All Findings</a>
+      </div>
+
+      {% if findings %}
+        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;">
+          {% for f in findings %}
+            <div style="padding: 8px; border-radius: var(--radius-sm); background: var(--bg-subtle); border-left: 3px solid {% if f.severity == 'blocker' %}var(--danger){% elif f.severity == 'warning' %}var(--warning){% else %}var(--primary){% endif %};">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 700;">{{ f.get_category_display }}</span>
+                <span class="badge {% if f.severity == 'blocker' %}badge-blocker{% elif f.severity == 'warning' %}badge-warning{% else %}badge-subtle{% endif %}">{{ f.severity }}</span>
+              </div>
+              <p style="margin-top: 4px; color: var(--text-primary);">{{ f.claim }}</p>
+              {% if f.suggested_action %}
+                <p style="margin-top: 4px; font-size: 0.75rem; color: var(--text-secondary);">Fix: {{ f.suggested_action }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="font-size: 0.85rem; color: var(--text-muted);">No continuity findings. All constraints satisfied!</p>
+      {% endif %}
+    </div>
+
+    <!-- Context Tab -->
+    <div v-show="activeTab === 'context'" style="font-size: 0.85rem; display: none;">
+      <h3 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 8px;">Active Participants & Rules</h3>
+      <div style="margin-bottom: 12px;">
+        <strong>Cast in Story:</strong>
+        <ul style="padding-left: 16px; margin-top: 4px; color: var(--text-secondary);">
+          {% for c in characters %}
+            <li>{{ c.name }} ({{ c.role }}){% if c.wounds_status %} - <span style="color: var(--danger);">{{ c.wounds_status }}</span>{% endif %}</li>
+          {% empty %}
+            <li>None registered</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <strong>World Rules:</strong>
+        <ul style="padding-left: 16px; margin-top: 4px; color: var(--text-secondary);">
+          {% for r in rules %}
+            <li>{{ r.title }}</li>
+          {% empty %}
+            <li>None registered</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <!-- Notes Tab -->
+    <div v-show="activeTab === 'notes'" style="font-size: 0.85rem; display: none;">
+      <h3 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 8px;">Tomo's Writing Notes</h3>
+      <p style="color: var(--text-secondary);">
+        Ensure Chapter {{ chapter.chapter_number }} fulfills all required beats in the local contract before moving to the next chapter.
+      </p>
+    </div>
+  </aside>
+</div>
+{% endblock %}

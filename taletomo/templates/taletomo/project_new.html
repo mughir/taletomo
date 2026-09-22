@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}New Novel Wizard — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 0 auto;">
+  <div style="margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700;">Novel Creation Wizard</h1>
+    <p style="color: var(--text-secondary);">Set your premise, target length (1–4,000 chapters), narrative voice, and style constraints.</p>
+  </div>
+
+  <form method="post" class="card">
+    {% csrf_token %}
+
+    <div class="form-group">
+      <label for="id_title" class="form-label">Novel Title</label>
+      <input type="text" id="id_title" name="title" class="form-control" required placeholder="e.g. The Grand Alchemist's Return">
+    </div>
+
+    <div class="form-group">
+      <label for="id_premise" class="form-label">Premise & Core Hook</label>
+      <textarea id="id_premise" name="premise" class="form-control" rows="4" required placeholder="What is the central concept, reader promise, and inciting incident?"></textarea>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div class="form-group">
+        <label for="id_target_chapters" class="form-label">Target Chapters (1–4,000)</label>
+        <input type="number" id="id_target_chapters" name="target_chapters" class="form-control" min="1" max="4000" value="100" required>
+        <small style="color: var(--text-muted);">TaleTomo scales from a short novella to a 4,000-chapter epic.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="id_length_preset" class="form-label">Chapter Length Preset</label>
+        <select id="id_length_preset" name="length_preset" class="form-control">
+          {% for val, label in presets %}
+            <option value="{{ val }}" {% if val == 'standard' %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div class="form-group">
+        <label for="id_genre" class="form-label">Genre</label>
+        <input type="text" id="id_genre" name="genre" class="form-control" value="Fantasy / Xianxia / LitRPG">
+      </div>
+
+      <div class="form-group">
+        <label for="id_tone" class="form-label">Tone & Atmosphere</label>
+        <input type="text" id="id_tone" name="tone" class="form-control" value="Epic, Mysterious, Strategic">
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div class="form-group">
+        <label for="id_pov" class="form-label">Point of View (POV)</label>
+        <select id="id_pov" name="pov" class="form-control">
+          <option value="Third Person Limited" selected>Third Person Limited</option>
+          <option value="First Person">First Person</option>
+          <option value="Third Person Omniscient">Third Person Omniscient</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="id_tense" class="form-label">Narrative Tense</label>
+        <select id="id_tense" name="tense" class="form-control">
+          <option value="Past Tense" selected>Past Tense</option>
+          <option value="Present Tense">Present Tense</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+      <a href="{% url 'taletomo:project_list' %}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary">Initialize Novel & Story Bible</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
