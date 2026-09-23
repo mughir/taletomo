@@ -112,6 +112,10 @@ class TimelineEvent(UUIDModel):
     def __str__(self):
         return f"#{self.real_order} {self.title}"
 
+    @property
+    def story_time(self) -> str:
+        return self.story_time_valid_from
+
 
 class PlotThread(UUIDModel):
     """Tracks narrative promises, mysteries, debts, and payoffs."""
@@ -145,6 +149,10 @@ class PlotThread(UUIDModel):
 
     def __str__(self):
         return f"[{self.get_status_display()}] {self.title}"
+
+    @property
+    def resolution_chapter(self):
+        return self.payoff_chapter
 
 
 class TruthScope(models.TextChoices):

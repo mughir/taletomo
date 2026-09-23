@@ -4,29 +4,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}{{ app_name }}{% endblock %} — AI Web-Novel Maker</title>
-  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <meta name="theme-color" content="#f4f1e9">
+  <title>{% block title %}{{ app_name }}{% endblock %} — Writing Studio</title>
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=studio-20260923b">
   {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="{% if user.is_authenticated %}is-authenticated{% else %}is-public{% endif %}">
   <a href="#main-content" class="skip-link">Skip to main content</a>
 
-  <header role="banner">
-    <nav class="navbar" aria-label="Main Navigation">
-      <a href="{% url 'taletomo:home' %}" class="navbar-brand">
-        <span aria-hidden="true">⭐</span>
-        <strong>{{ app_name }}</strong>
-        <span style="font-size: 0.85rem; font-weight: normal; color: var(--text-muted); margin-left: 8px;">
-          Tomo
+  <header class="site-header" role="banner">
+    <nav class="navbar" aria-label="Main navigation">
+      <a href="{% if user.is_authenticated %}{% url 'taletomo:home' %}{% else %}{% url 'login' %}{% endif %}" class="navbar-brand" aria-label="TaleTomo writing studio">
+        <span class="brand-mark" aria-hidden="true">T</span>
+        <span class="brand-lockup">
+          <strong>{{ app_name }}</strong>
+          <small>THE LONG-FORM WRITING STUDIO</small>
         </span>
       </a>
 
-      <ul class="nav-links">
-        <li><a href="{% url 'taletomo:project_list' %}">Projects</a></li>
-        <li><a href="{% url 'taletomo:project_new' %}" class="btn btn-primary btn-sm">+ New Novel</a></li>
-        <li><a href="{% url 'taletomo:job_list' %}">Jobs</a></li>
-        <li><a href="{% url 'taletomo:settings_providers' %}">AI Providers</a></li>
-      </ul>
+      {% if user.is_authenticated %}
+        <ul class="nav-links" aria-label="Workspace">
+          <li><a class="nav-item{% if request.resolver_match.url_name == 'home' %} is-current{% endif %}" href="{% url 'taletomo:home' %}"{% if request.resolver_match.url_name == 'home' %} aria-current="page"{% endif %}>Writing desk</a></li>
+          <li><a class="nav-item{% if request.resolver_match.url_name == 'project_list' or request.resolver_match.url_name == 'project_new' or request.resolver_match.url_name == 'project_overview' or request.resolver_match.url_name == 'project_outline' or request.resolver_match.url_name == 'chapter_edit' %} is-current{% endif %}" href="{% url 'taletomo:project_list' %}">My novels</a></li>
+          <li><a class="nav-item{% if request.resolver_match.url_name == 'job_list' or request.resolver_match.url_name == 'job_detail' %} is-current{% endif %}" href="{% url 'taletomo:job_list' %}">Draft activity</a></li>
+          <li><a class="nav-item{% if request.resolver_match.url_name == 'settings_providers' %} is-current{% endif %}" href="{% url 'taletomo:settings_providers' %}">AI providers</a></li>
+        </ul>
+        <div class="account-controls">
+          <span class="account-name">{{ user.get_username }}</span>
+          <form action="{% url 'logout' %}" method="post" class="logout-form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-quiet btn-sm">Sign out</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="public-tagline">A calm place to grow a story.</p>
+      {% endif %}
     </nav>
   </header>
 
@@ -40,7 +52,6 @@
         {% endfor %}
       </div>
     {% endif %}
-
     {% block content %}{% endblock %}
   </main>
 

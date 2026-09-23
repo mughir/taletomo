@@ -1,210 +1,230 @@
 {% extends "base.html" %}
 
-{% block title %}Write Chapter {{ chapter.chapter_number }} — {{ project.title }}{% endblock %}
+{% block title %}Chapter {{ chapter.chapter_number }} — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-  <div>
-    <div style="display: flex; gap: 8px; align-items: center;">
-      <h1 style="font-size: 1.8rem; font-weight: 700;">Chapter {{ chapter.chapter_number }}: {{ chapter.title|default:"Drafting" }}</h1>
-      <span class="badge {% if chapter.status == 'approved' or chapter.status == 'locked' %}badge-success{% elif chapter.status == 'review' %}badge-warning{% else %}badge-subtle{% endif %}">
-        {{ chapter.get_status_display }}
-      </span>
-    </div>
-    <p style="font-size: 0.9rem; color: var(--text-secondary);">
-      Target: {{ chapter.plan.target_words|default:project.target_words_per_chapter }} words • 
-      <span id="word-count-display">0 words</span> • 
-      Revision Head: <code>{{ project.active_branch_head }}</code>
-    </p>
-  </div>
-
-  <div style="display: flex; gap: 8px;">
-    <!-- Ask Tomo to Generate Draft -->
-    <form method="post" action="{% url 'taletomo:chapter_generate' project.id chapter.id %}">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-primary" {% if chapter.status == 'locked' %}disabled title="Chapter is locked"{% endif %}>
-        ✨ Ask Tomo (Generate Draft)
-      </button>
-    </form>
-
-    <a href="{% url 'taletomo:chapter_plan' project.id chapter.id %}" class="btn btn-secondary">Contract</a>
-    <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-secondary">Outline</a>
-  </div>
-</div>
-
-{% if blockers_count > 0 %}
-  <div class="message message-error" style="display: flex; justify-content: space-between; align-items: center;">
-    <div>
-      <strong>⚠️ Deterministic Contradiction Detected ({{ blockers_count }} Blocker):</strong>
-      Draft contains physical injury, identity, or world rule violations.
-    </div>
-    <a href="{% url 'taletomo:chapter_continuity' project.id chapter.id %}" class="btn btn-danger btn-sm">Review Findings</a>
-  </div>
-{% endif %}
-
-<div class="editor-grid">
-  <!-- Left Column: Nearby Chapter Navigator -->
-  <aside class="editor-column" aria-label="Chapter Navigator">
-    <h2 style="font-size: 1rem; font-weight: 700; margin-bottom: 12px;">Nearby Chapters</h2>
-    <div style="display: flex; flex-direction: column; gap: 8px;">
-      {% if prev_chapter %}
-        <a href="{% url 'taletomo:chapter_edit' project.id prev_chapter.id %}" class="btn btn-secondary btn-sm" style="text-align: left; justify-content: flex-start;">
-          ← Ch {{ prev_chapter.chapter_number }}: {{ prev_chapter.title|default:"Previous"|truncatechars:18 }}
-        </a>
-      {% endif %}
-
-      <div style="padding: 8px 12px; background: var(--bg-subtle); border-left: 3px solid var(--primary); font-weight: 700; font-size: 0.9rem;">
-        Ch {{ chapter.chapter_number }} (Active)
-      </div>
-
-      {% if next_chapter %}
-        <a href="{% url 'taletomo:chapter_edit' project.id next_chapter.id %}" class="btn btn-secondary btn-sm" style="text-align: left; justify-content: flex-start;">
-          → Ch {{ next_chapter.chapter_number }}: {{ next_chapter.title|default:"Next"|truncatechars:18 }}
-        </a>
-      {% endif %}
-    </div>
-
-    {% if drafts %}
-      <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border-color);">
-      <h3 style="font-size: 0.9rem; font-weight: 600; margin-bottom: 8px;">Version History</h3>
-      <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem;">
-        {% for d in drafts %}
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; border-radius: var(--radius-sm); {% if d.id == active_draft.id %}background: var(--bg-subtle); font-weight: 700;{% endif %}">
-            <span>v{{ d.version_number }} ({{ d.word_count }}w)</span>
-            <span class="badge badge-subtle">{{ d.status }}</span>
+<section class="writer-workbench" aria-labelledby="chapter-title">
+  <header class="writer-header">
+    <div class="writer-heading-block">
+      <a class="writer-breadcrumb" href="{% url 'taletomo:project_outline' project.id %}">{{ project.title }} <span aria-hidden="true">/</span> Outline</a>
+      <div class="chapter-heading">
+        <span class="chapter-number" aria-hidden="true">{{ chapter.chapter_number|stringformat:"02d" }}</span>
+        <div class="chapter-heading-copy">
+          <p class="eyebrow">CHAPTER {{ chapter.chapter_number }}</p>
+          <h1 id="chapter-title">{{ chapter.title|default:"Untitled chapter" }}</h1>
+          <div class="chapter-meta">
+            <span class="badge {% if chapter.status == 'approved' or chapter.status == 'locked' %}badge-success{% elif chapter.status == 'review' %}badge-warning{% else %}badge-subtle{% endif %}">{{ chapter.get_status_display }}</span>
+            <span>Target {{ chapter.plan.target_words|default:project.target_words_per_chapter }} words</span>
+            <span><span id="word-count-display">0 words</span></span>
+            <span>Canon {{ project.active_branch_head }}</span>
           </div>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </aside>
-
-  <!-- Center Column: Manuscript Editor & Diff -->
-  <section class="editor-column">
-    <form method="post" id="manuscript-editor">
-      {% csrf_token %}
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <span style="font-weight: 600; font-size: 0.95rem;">
-          Manuscript Prose {% if active_draft %}(Draft v{{ active_draft.version_number }}){% endif %}
-        </span>
-        <button type="submit" class="btn btn-secondary btn-sm" {% if chapter.status == 'locked' %}disabled{% endif %}>
-          Save Manual Edit (New v)
-        </button>
-      </div>
-
-      <textarea id="prose-textarea" name="prose_content" class="manuscript-textarea" {% if chapter.status == 'locked' %}readonly{% endif %} placeholder="Write prose or click 'Ask Tomo' to generate from contract...">{{ active_draft.prose_content|default:"" }}</textarea>
-    </form>
-
-    <!-- Two-Phase Approval Controls -->
-    <div style="margin-top: 20px; padding: 16px; background: var(--bg-subtle); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 12px;">
-      <h3 style="font-size: 1rem; font-weight: 700;">Two-Phase Canon Approval</h3>
-
-      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-        <!-- Phase 1: Approve Draft Prose -->
-        {% if chapter.status != 'locked' and chapter.status != 'approved' and active_draft %}
-          <form method="post" action="{% url 'taletomo:chapter_approve_draft' project.id chapter.id %}">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-secondary">
-              Step 1: Approve Draft Prose
-            </button>
-          </form>
-        {% elif active_draft and active_draft.status == 'accepted' %}
-          <span class="badge badge-success">✓ Prose Draft Approved</span>
-        {% endif %}
-
-        <!-- Phase 2: Atomic Canon Commit -->
-        {% if chapter.status != 'locked' and active_draft %}
-          <form method="post" action="{% url 'taletomo:chapter_commit_canon' project.id chapter.id %}" style="display: flex; gap: 8px; align-items: center;">
-            {% csrf_token %}
-            <input type="hidden" name="expected_head" value="{{ project.active_branch_head }}">
-            <input type="text" name="summary" class="form-control" style="width: 260px;" placeholder="Summary of events..." value="{{ chapter.current_summary|default:'' }}">
-            <button type="submit" class="btn btn-success" {% if blockers_count > 0 %}disabled title="Resolve blocker findings first"{% endif %}>
-              Step 2: Commit Canon & Lock Chapter
-            </button>
-          </form>
-        {% elif chapter.status == 'locked' %}
-          <span class="badge badge-success" style="font-size: 0.95rem; padding: 6px 12px;">
-            🔒 Locked & Committed to {{ project.active_branch_head }}
-          </span>
-        {% endif %}
-      </div>
-    </div>
-
-    <!-- Unified Diff with Parent Draft -->
-    {% if diff_html %}
-      <div style="margin-top: 24px;">
-        <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 8px;">Changes from Previous Draft</h3>
-        <div class="diff-container">{{ diff_html }}</div>
-      </div>
-    {% endif %}
-  </section>
-
-  <!-- Right Column: Tomo Assistant Drawer (Interactive Island) -->
-  <aside class="editor-column" id="tomo-drawer" aria-label="Tomo Assistant Drawer">
-    <div style="display: flex; gap: 4px; border-bottom: 1px solid var(--border-color); margin-bottom: 12px; padding-bottom: 6px;">
-      <button type="button" @click="activeTab = 'checks'" :class="['btn', 'btn-sm', activeTab === 'checks' ? 'btn-primary' : 'btn-secondary']">Checks</button>
-      <button type="button" @click="activeTab = 'context'" :class="['btn', 'btn-sm', activeTab === 'context' ? 'btn-primary' : 'btn-secondary']">Context</button>
-      <button type="button" @click="activeTab = 'notes'" :class="['btn', 'btn-sm', activeTab === 'notes' ? 'btn-primary' : 'btn-secondary']">Notes</button>
-    </div>
-
-    <!-- Checks Tab -->
-    <div v-show="activeTab === 'checks'">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <h3 style="font-size: 0.95rem; font-weight: 700;">Continuity Checks</h3>
-        <a href="{% url 'taletomo:chapter_continuity' project.id chapter.id %}" style="font-size: 0.8rem;">All Findings</a>
-      </div>
-
-      {% if findings %}
-        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;">
-          {% for f in findings %}
-            <div style="padding: 8px; border-radius: var(--radius-sm); background: var(--bg-subtle); border-left: 3px solid {% if f.severity == 'blocker' %}var(--danger){% elif f.severity == 'warning' %}var(--warning){% else %}var(--primary){% endif %};">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 700;">{{ f.get_category_display }}</span>
-                <span class="badge {% if f.severity == 'blocker' %}badge-blocker{% elif f.severity == 'warning' %}badge-warning{% else %}badge-subtle{% endif %}">{{ f.severity }}</span>
-              </div>
-              <p style="margin-top: 4px; color: var(--text-primary);">{{ f.claim }}</p>
-              {% if f.suggested_action %}
-                <p style="margin-top: 4px; font-size: 0.75rem; color: var(--text-secondary);">Fix: {{ f.suggested_action }}</p>
-              {% endif %}
-            </div>
-          {% endfor %}
         </div>
-      {% else %}
-        <p style="font-size: 0.85rem; color: var(--text-muted);">No continuity findings. All constraints satisfied!</p>
-      {% endif %}
+      </div>
     </div>
 
-    <!-- Context Tab -->
-    <div v-show="activeTab === 'context'" style="font-size: 0.85rem; display: none;">
-      <h3 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 8px;">Active Participants & Rules</h3>
-      <div style="margin-bottom: 12px;">
-        <strong>Cast in Story:</strong>
-        <ul style="padding-left: 16px; margin-top: 4px; color: var(--text-secondary);">
-          {% for c in characters %}
-            <li>{{ c.name }} ({{ c.role }}){% if c.wounds_status %} - <span style="color: var(--danger);">{{ c.wounds_status }}</span>{% endif %}</li>
-          {% empty %}
-            <li>None registered</li>
-          {% endfor %}
-        </ul>
-      </div>
+    <div class="writer-actions">
+      <form method="post" action="{% url 'taletomo:chapter_generate' project.id chapter.id %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary" {% if chapter.status == 'locked' %}disabled title="Chapter is locked"{% endif %}>Generate a draft</button>
+      </form>
+      <a href="{% url 'taletomo:chapter_plan' project.id chapter.id %}" class="btn btn-secondary">Chapter contract</a>
+      <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-quiet">All chapters</a>
+    </div>
+  </header>
+
+  {% if blockers_count > 0 %}
+    <div class="message message-error writer-blocker" role="alert">
       <div>
-        <strong>World Rules:</strong>
-        <ul style="padding-left: 16px; margin-top: 4px; color: var(--text-secondary);">
-          {% for r in rules %}
-            <li>{{ r.title }}</li>
-          {% empty %}
-            <li>None registered</li>
-          {% endfor %}
-        </ul>
+        <strong>{{ blockers_count }} continuity blocker{{ blockers_count|pluralize }} need review</strong>
+        <p>Resolve these findings before committing the chapter to canon.</p>
       </div>
+      <a href="{% url 'taletomo:chapter_continuity' project.id chapter.id %}" class="btn btn-danger btn-sm">Review findings</a>
     </div>
+  {% endif %}
 
-    <!-- Notes Tab -->
-    <div v-show="activeTab === 'notes'" style="font-size: 0.85rem; display: none;">
-      <h3 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 8px;">Tomo's Writing Notes</h3>
-      <p style="color: var(--text-secondary);">
-        Ensure Chapter {{ chapter.chapter_number }} fulfills all required beats in the local contract before moving to the next chapter.
-      </p>
-    </div>
-  </aside>
-</div>
+  <div class="writer-layout">
+    <aside class="writer-rail" aria-label="Chapter navigation and version history">
+      <section class="rail-section">
+        <p class="rail-label">CHAPTER NAVIGATION</p>
+        <div class="chapter-neighbors">
+          {% if prev_chapter %}
+            <a href="{% url 'taletomo:chapter_edit' project.id prev_chapter.id %}" class="neighbor-link">
+              <span aria-hidden="true">←</span><span><small>Previous</small><strong>Ch. {{ prev_chapter.chapter_number }} · {{ prev_chapter.title|default:"Untitled"|truncatechars:22 }}</strong></span>
+            </a>
+          {% endif %}
+          <div class="neighbor-current" aria-current="page">
+            <span class="neighbor-current-dot" aria-hidden="true"></span>
+            <span><small>YOU ARE WRITING</small><strong>Chapter {{ chapter.chapter_number }}</strong></span>
+          </div>
+          {% if next_chapter %}
+            <a href="{% url 'taletomo:chapter_edit' project.id next_chapter.id %}" class="neighbor-link">
+              <span aria-hidden="true">→</span><span><small>Next</small><strong>Ch. {{ next_chapter.chapter_number }} · {{ next_chapter.title|default:"Untitled"|truncatechars:22 }}</strong></span>
+            </a>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if drafts %}
+        <section class="rail-section version-section" aria-labelledby="versions-heading">
+          <div class="rail-section-heading">
+            <p class="rail-label" id="versions-heading">DRAFT HISTORY</p>
+            <span class="version-count">{{ drafts|length }}</span>
+          </div>
+          <ol class="version-list">
+            {% for d in drafts %}
+              <li class="version-item{% if active_draft and d.id == active_draft.id %} is-active{% endif %}">
+                <span class="version-title">Version {{ d.version_number }}</span>
+                <span class="version-meta">{{ d.word_count }} words · {{ d.get_status_display|default:d.status }}</span>
+              </li>
+            {% endfor %}
+          </ol>
+        </section>
+      {% endif %}
+    </aside>
+
+    <main class="writer-main" aria-label="Chapter manuscript and review">
+      <section class="writing-surface" aria-label="Manuscript editor">
+        <div class="writing-toolbar">
+          <div>
+            <p class="rail-label">MANUSCRIPT</p>
+            <span class="draft-label">{% if active_draft %}Draft · Version {{ active_draft.version_number }}{% else %}New draft{% endif %}</span>
+          </div>
+          <form method="post" id="manuscript-editor">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary btn-sm" {% if chapter.status == 'locked' %}disabled{% endif %}>Save a new version</button>
+          </form>
+        </div>
+        <label for="prose-textarea" class="sr-only">Chapter prose</label>
+        <textarea id="prose-textarea" name="prose_content" form="manuscript-editor" class="manuscript-textarea" {% if chapter.status == 'locked' %}readonly{% endif %} placeholder="Begin with the moment everything changes…">{{ active_draft.prose_content|default:"" }}</textarea>
+        <div class="writing-footer">
+          <span>{% if chapter.status == 'locked' %}This chapter is locked.{% else %}Your edits save as a new draft version.{% endif %}</span>
+          <a href="{% url 'taletomo:chapter_plan' project.id chapter.id %}">Review chapter contract <span aria-hidden="true">→</span></a>
+        </div>
+      </section>
+
+      <section class="approval-panel" aria-labelledby="approval-heading">
+        <div class="approval-heading">
+          <div>
+            <p class="eyebrow">YOUR STORY, YOUR CALL</p>
+            <h2 id="approval-heading">Review before it becomes canon</h2>
+            <p>Draft approval and canon commit are separate. Nothing is locked until you choose both steps.</p>
+          </div>
+          {% if chapter.status == 'locked' %}
+            <span class="badge badge-success">Committed · {{ project.active_branch_head }}</span>
+          {% endif %}
+        </div>
+        <div class="approval-actions">
+          <div class="approval-step">
+            <span class="approval-step-number">01</span>
+            <div class="approval-step-copy">
+              <strong>Approve the prose</strong>
+              <small>Accept this draft as the chapter text.</small>
+            </div>
+            {% if chapter.status != 'locked' and chapter.status != 'approved' and active_draft %}
+              <form method="post" action="{% url 'taletomo:chapter_approve_draft' project.id chapter.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-secondary btn-sm">Approve draft</button>
+              </form>
+            {% elif active_draft and active_draft.status == 'accepted' %}
+              <span class="badge badge-success">Approved</span>
+            {% else %}
+              <span class="approval-pending">Waiting for a draft</span>
+            {% endif %}
+          </div>
+
+          <div class="approval-step">
+            <span class="approval-step-number">02</span>
+            <div class="approval-step-copy">
+              <strong>Commit story facts</strong>
+              <small>Add a short summary and lock this chapter into canon.</small>
+            </div>
+            {% if chapter.status != 'locked' and active_draft %}
+              <form method="post" action="{% url 'taletomo:chapter_commit_canon' project.id chapter.id %}" class="canon-commit-form">
+                {% csrf_token %}
+                <input type="hidden" name="expected_head" value="{{ project.active_branch_head }}">
+                <label class="sr-only" for="id_canon_summary">Canon summary</label>
+                <input id="id_canon_summary" type="text" name="summary" class="form-control" placeholder="What changed in the story?" value="{{ chapter.current_summary|default:'' }}">
+                <button type="submit" class="btn btn-primary btn-sm" {% if blockers_count > 0 %}disabled title="Resolve blocker findings first"{% endif %}>Commit to canon</button>
+              </form>
+            {% elif chapter.status == 'locked' %}
+              <span class="approval-pending">This chapter is committed.</span>
+            {% else %}
+              <span class="approval-pending">Approve a draft first.</span>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {% if diff_html %}
+        <section class="revision-panel" aria-labelledby="revision-heading">
+          <div class="section-heading">
+            <div><p class="eyebrow">REVISION</p><h2 id="revision-heading">Changes from the previous draft</h2></div>
+          </div>
+          <div class="diff-container">{{ diff_html }}</div>
+        </section>
+      {% endif %}
+    </main>
+
+    <aside class="writer-inspector" id="tomo-drawer" aria-label="Tomo's chapter inspector">
+      <div class="inspector-heading">
+        <p class="eyebrow">TOMO’S DESK</p>
+        <h2>Story inspector</h2>
+      </div>
+      <div class="inspector-tabs" role="tablist" aria-label="Inspector panels">
+        <button type="button" role="tab" @click="activeTab = 'checks'" :aria-selected="activeTab === 'checks'" :class="['inspector-tab', activeTab === 'checks' ? 'is-active' : '']">Checks</button>
+        <button type="button" role="tab" @click="activeTab = 'context'" :aria-selected="activeTab === 'context'" :class="['inspector-tab', activeTab === 'context' ? 'is-active' : '']">Context</button>
+        <button type="button" role="tab" @click="activeTab = 'notes'" :aria-selected="activeTab === 'notes'" :class="['inspector-tab', activeTab === 'notes' ? 'is-active' : '']">Notes</button>
+      </div>
+
+      <div v-show="activeTab === 'checks'" class="inspector-content">
+        <div class="inspector-section-heading">
+          <h3>Continuity checks</h3>
+          <a href="{% url 'taletomo:chapter_continuity' project.id chapter.id %}">All</a>
+        </div>
+        {% if findings %}
+          <div class="finding-list">
+            {% for f in findings %}
+              <article class="finding-card finding-{{ f.severity }}">
+                <div class="finding-heading">
+                  <strong>{{ f.get_category_display }}</strong>
+                  <span class="badge {% if f.severity == 'blocker' %}badge-blocker{% elif f.severity == 'warning' %}badge-warning{% else %}badge-subtle{% endif %}">{{ f.severity }}</span>
+                </div>
+                <p>{{ f.claim }}</p>
+                {% if f.suggested_action %}<small>{{ f.suggested_action }}</small>{% endif %}
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="inspector-empty"><strong>No checks to review</strong><p>Continuity findings will appear here when a draft is checked.</p></div>
+        {% endif %}
+      </div>
+
+      <div v-show="activeTab === 'context'" class="inspector-content" style="display: none;">
+        <div class="inspector-context-group">
+          <h3>Characters in view</h3>
+          <ul>
+            {% for c in characters %}
+              <li><strong>{{ c.name }}</strong><span>{{ c.role }}{% if c.wounds_status %} · {{ c.wounds_status }}{% endif %}</span></li>
+            {% empty %}<li class="inspector-muted">No characters registered yet.</li>{% endfor %}
+          </ul>
+        </div>
+        <div class="inspector-context-group">
+          <h3>World rules</h3>
+          <ul>
+            {% for r in rules %}<li><strong>{{ r.title }}</strong></li>
+            {% empty %}<li class="inspector-muted">No rules registered yet.</li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <div v-show="activeTab === 'notes'" class="inspector-content" style="display: none;">
+        <div class="inspector-note">
+          <p class="eyebrow">A SMALL REMINDER</p>
+          <p>Check that Chapter {{ chapter.chapter_number }} fulfills its required beats before moving to the next chapter.</p>
+          <a href="{% url 'taletomo:chapter_plan' project.id chapter.id %}">Open the chapter contract <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
 {% endblock %}

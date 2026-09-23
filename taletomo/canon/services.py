@@ -10,8 +10,10 @@ from taletomo.canon.models import (
     TruthScope,
     WorldRule,
 )
+from taletomo.consistency.models import FindingSeverity, FindingStatus
 from taletomo.core.models import AuditLog
-from taletomo.planning.models import Chapter, Project
+from taletomo.generation.models import DraftArtifact, DraftStatus
+from taletomo.planning.models import Chapter, ChapterPlan, Project
 
 
 class StaleHeadError(Exception):
@@ -70,14 +72,58 @@ class CanonService:
         events: List[Dict[str, Any]],
         facts: List[Dict[str, Any]],
         actor=None,
+        override_blockers: bool = False,
+        override_rationale: str = "",
     ) -> StorySnapshot:
-        """Atomically appends story events, confirms canon facts, advances branch head, and saves snapshot."""
+        """Atomically validates preconditions, appends story events, confirms canon facts, advances branch head, and saves snapshot."""
         # 1. Branch head check to prevent stale commit / race conditions
         current_project = Project.objects.select_for_update().get(id=project.id)
+        if actor is None or actor.pk != current_project.owner_id:
+            raise PermissionError("Only the project owner may commit canon.")
         if current_project.active_branch_head != expected_head:
             raise StaleHeadError(
                 f"Branch head mismatch: expected '{expected_head}', but current head is '{current_project.active_branch_head}'."
             )
+
+        # 2. Domain preconditions check
+        if chapter.project_id != project.id:
+            raise ValueError(f"Chapter {chapter.id} does not belong to project {project.id}")
+
+        if chapter.status != Chapter.Status.APPROVED:
+            raise ValueError(
+                f"Chapter {chapter.chapter_number} cannot be committed: status is '{chapter.status}', must be APPROVED."
+            )
+
+        if not chapter.active_draft_id:
+            raise ValueError(f"Chapter {chapter.chapter_number} has no active draft to commit.")
+
+        active_draft = DraftArtifact.objects.filter(id=chapter.active_draft_id).first()
+        if not active_draft or active_draft.status != DraftStatus.ACCEPTED:
+            draft_status = active_draft.status if active_draft else "None"
+            raise ValueError(
+                f"Chapter {chapter.chapter_number} active draft is '{draft_status}', but must be ACCEPTED before canon commit."
+            )
+
+        plan = getattr(chapter, "plan", None)
+        if not plan or plan.status not in [ChapterPlan.Status.APPROVED, ChapterPlan.Status.LOCKED]:
+            plan_status = plan.status if plan else "None"
+            raise ValueError(
+                f"Chapter {chapter.chapter_number} plan contract is '{plan_status}', must be APPROVED or LOCKED before commit."
+            )
+
+        open_blockers = chapter.continuity_findings.filter(
+            severity=FindingSeverity.BLOCKER,
+            status=FindingStatus.OPEN,
+        )
+        if open_blockers.exists():
+            if not override_blockers:
+                blocker_claims = "; ".join(b.claim for b in open_blockers[:3])
+                raise ValueError(
+                    f"Cannot commit canon with {open_blockers.count()} open blocker(s): {blocker_claims}. "
+                    "Resolve findings or provide authorized override."
+                )
+            if not override_rationale.strip():
+                raise ValueError("A non-empty rationale is required to override open blockers.")
 
         # 2. Append Story Events
         for ev in events:
@@ -134,7 +180,12 @@ class CanonService:
             target_id=str(chapter.id),
             old_version=old_head,
             new_version=next_head,
-            reason=f"Committed Chapter {chapter.chapter_number} canon and state",
+            reason=(
+                f"Committed Chapter {chapter.chapter_number} canon and state. "
+                f"Blocker override rationale: {override_rationale.strip()}"
+                if override_blockers
+                else f"Committed Chapter {chapter.chapter_number} canon and state"
+            ),
         )
 
         return snapshot

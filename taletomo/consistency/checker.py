@@ -34,9 +34,9 @@ class ContinuityChecker:
                         chapter=chapter,
                         draft_id=draft_id,
                         category=FindingCategory.IDENTITY,
-                        severity=FindingSeverity.BLOCKER,
-                        confidence=1.0,
-                        claim=f"Character '{char.name}' appears active in the prose, but is marked deceased.",
+                        severity=FindingSeverity.WARNING,
+                        confidence=0.6,
+                        claim=f"Deceased character '{char.name}' is mentioned; verify whether this is a flashback, memory, or active presence.",
                         conflicting_evidence=[f"Character Record: {char.name} (is_alive=False)"],
                         source_references=[f"Chapter {chapter.chapter_number}"],
                         suggested_action=f"Verify if this is a flashback, mention, or resurrection; otherwise remove '{char.name}' from active action.",
@@ -151,17 +151,24 @@ class ContinuityChecker:
 
             parsed = json.loads(raw)
             if not isinstance(parsed, list):
-                return []
+                raise ValueError("Critique response must be a JSON list of findings.")
 
             findings = []
             for item in parsed:
+                cat = item.get("category")
+                if cat not in FindingCategory.values:
+                    cat = FindingCategory.PLOT
+                sev = item.get("severity")
+                if sev not in FindingSeverity.values:
+                    sev = FindingSeverity.WARNING
+
                 findings.append(
                     ContinuityFinding(
                         project=chapter.project,
                         chapter=chapter,
                         draft_id=draft_id,
-                        category=item.get("category", FindingCategory.PLOT),
-                        severity=item.get("severity", FindingSeverity.WARNING),
+                        category=cat,
+                        severity=sev,
                         confidence=float(item.get("confidence", 0.8)),
                         claim=item.get("claim", "Potential continuity inconsistency"),
                         conflicting_evidence=item.get("conflicting_evidence", []),
@@ -172,7 +179,21 @@ class ContinuityChecker:
             return findings
         except Exception as e:
             logger.warning(f"Model critique parsing failed: {e}")
-            return []
+            # Do not fail-open silently: record an advisory finding alerting author to review
+            return [
+                ContinuityFinding(
+                    project=chapter.project,
+                    chapter=chapter,
+                    draft_id=draft_id,
+                    category=FindingCategory.AUTOMATION,
+                    severity=FindingSeverity.ADVISORY,
+                    confidence=0.5,
+                    claim=f"AI continuity critique could not be fully parsed ({type(e).__name__}).",
+                    conflicting_evidence=["Automated critique returned non-standard format."],
+                    source_references=[f"Chapter {chapter.chapter_number}"],
+                    suggested_action="Perform manual continuity check for this draft.",
+                )
+            ]
 
     @staticmethod
     def check_and_persist(
@@ -185,7 +206,14 @@ class ContinuityChecker:
         findings = ContinuityChecker.run_deterministic_checks(chapter, prose, draft_id)
         if adapter:
             plan = getattr(chapter, "plan", None)
-            contract_text = json.dumps(plan.objectives if plan else [])
+            contract_data = {
+                "objectives": plan.objectives if plan else [],
+                "required_beats": plan.required_beats if plan else [],
+                "prohibited_outcomes": plan.prohibited_outcomes if plan else [],
+                "continuity_requirements": plan.continuity_requirements if plan else [],
+                "target_words": plan.target_words if plan else 2200,
+            }
+            contract_text = json.dumps(contract_data, indent=2)
             ai_findings = ContinuityChecker.run_model_critique(adapter, chapter, prose, contract_text, draft_id)
             findings.extend(ai_findings)
 

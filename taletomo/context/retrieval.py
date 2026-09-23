@@ -33,9 +33,27 @@ class ContextAssembler:
         )
 
         source_entries: List[Dict[str, Any]] = []
+        category_spent: Dict[str, int] = {
+            "constraints": 0,
+            "contract": 0,
+            "state": 0,
+            "retrieval": 0,
+            "recent_context": 0,
+        }
 
-        def record_entry(entry_id: str, category: str, content: str, priority: int = 1) -> str:
+        def record_entry(entry_id: str, category: str, content: str, priority: int = 1) -> Optional[str]:
             tokens = BudgetCalculator.estimate_tokens(content)
+            cat_limit = budget.category_budgets.get(category, budget.usable_input)
+
+            if category_spent.get(category, 0) + tokens > cat_limit:
+                if category in ("constraints", "contract"):
+                    raise ValueError(
+                        f"Mandatory category '{category}' ({category_spent.get(category, 0) + tokens} tokens) "
+                        f"exceeds category budget ({cat_limit} tokens). Model limit is {model_context_limit}."
+                    )
+                return None
+
+            category_spent[category] = category_spent.get(category, 0) + tokens
             h = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
             source_entries.append(
                 {
@@ -63,8 +81,9 @@ class ContextAssembler:
             ]
             if project.content_boundaries:
                 bible_parts.append(f"Content Boundaries: {project.content_boundaries}")
-            bible_text = "\n".join(bible_parts)
-            record_entry(str(bible.id), "constraints", bible_text, priority=1)
+            full_b_text = "\n".join(bible_parts)
+            if record_entry(str(bible.id), "constraints", full_b_text, priority=1):
+                bible_text = full_b_text
 
         # 2. Local Chapter Contract & Scene Plan
         plan = getattr(chapter, "plan", None)
@@ -79,18 +98,19 @@ class ContextAssembler:
                 f"Continuity Requirements: {json.dumps(plan.continuity_requirements)}",
                 f"Target Words: {plan.target_words} (+/- {plan.tolerance_percent}%)",
             ]
-            contract_text = "\n".join(contract_parts)
-            record_entry(str(plan.id), "contract", contract_text, priority=1)
+            full_c_text = "\n".join(contract_parts)
+            if record_entry(str(plan.id), "contract", full_c_text, priority=1):
+                contract_text = full_c_text
 
             scenes = plan.scenes.all()
             if scenes:
                 s_lines = [f"Scene {s.scene_order}: {s.objective} (Conflict: {s.conflict})" for s in scenes]
-                scene_plans_text = "\n".join(s_lines)
-                record_entry(f"scenes-{plan.id}", "contract", scene_plans_text, priority=1)
+                full_s_text = "\n".join(s_lines)
+                if record_entry(f"scenes-{plan.id}", "contract", full_s_text, priority=1):
+                    scene_plans_text = full_s_text
 
         # 3. Canonical Story State & Entities (1-hop deterministic graph expansion)
         state_parts = []
-        # Characters present or key cast
         characters = Character.objects.filter(project=project)
         for char in characters[:15]:
             char_desc = f"Character: {char.name} ({char.role}). Status: {'Alive' if char.is_alive else 'Dead'}."
@@ -98,8 +118,8 @@ class ContextAssembler:
                 char_desc += f" Wounds: {char.wounds_status}."
             if char.beliefs:
                 char_desc += f" Beliefs: {json.dumps(char.beliefs)}."
-            state_parts.append(char_desc)
-            record_entry(str(char.id), "state", char_desc, priority=2)
+            if record_entry(str(char.id), "state", char_desc, priority=2):
+                state_parts.append(char_desc)
 
         # Active rules
         rules = WorldRule.objects.filter(project=project)
@@ -107,8 +127,8 @@ class ContextAssembler:
             r_desc = f"Rule [{rule.category}]: {rule.title} - {rule.rule_statement}"
             if rule.forbidden_violations:
                 r_desc += f" (Forbidden: {rule.forbidden_violations})"
-            state_parts.append(r_desc)
-            record_entry(str(rule.id), "state", r_desc, priority=1)
+            if record_entry(str(rule.id), "state", r_desc, priority=1):
+                state_parts.append(r_desc)
 
         # Active plot threads
         threads = PlotThread.objects.filter(
@@ -117,13 +137,12 @@ class ContextAssembler:
         )
         for thread in threads[:10]:
             t_desc = f"Active Thread: {thread.title} ({thread.category}) - Setup Ch {thread.setup_chapter}"
-            state_parts.append(t_desc)
-            record_entry(str(thread.id), "state", t_desc, priority=2)
+            if record_entry(str(thread.id), "state", t_desc, priority=2):
+                state_parts.append(t_desc)
 
         state_text = "\n".join(state_parts)
 
         # 4. Retrieved Older Evidence (Hybrid Retrieval with Anti-Leakage Filter)
-        # Anti-leakage: only include facts from past or current story state, never future chapters
         retrieval_parts = []
         confirmed_facts = CanonFact.objects.filter(
             project=project,
@@ -143,8 +162,8 @@ class ContextAssembler:
                     pass
 
             fact_line = f"Canon Fact: {fact.subject} {fact.predicate} '{fact.value}' ({fact.truth_scope})"
-            retrieval_parts.append(fact_line)
-            record_entry(str(fact.id), "retrieval", fact_line, priority=3)
+            if record_entry(str(fact.id), "retrieval", fact_line, priority=3):
+                retrieval_parts.append(fact_line)
 
         retrieval_text = "\n".join(retrieval_parts[:30])
 
@@ -158,8 +177,8 @@ class ContextAssembler:
         for past_ch in reversed(list(past_chapters)):
             if past_ch.current_summary:
                 summ_line = f"Chapter {past_ch.chapter_number} Summary: {past_ch.current_summary}"
-                recent_summaries.append(summ_line)
-                record_entry(str(past_ch.id), "recent_context", summ_line, priority=2)
+                if record_entry(str(past_ch.id), "recent_context", summ_line, priority=2):
+                    recent_summaries.append(summ_line)
 
         recent_text = "\n".join(recent_summaries)
 
@@ -193,7 +212,8 @@ class ContextAssembler:
         )
 
         final_prompt = "\n".join(user_prompt_sections)
-        total_tokens = sum(e["tokens"] for e in source_entries) + BudgetCalculator.estimate_tokens(system_prompt)
+        template_overhead = BudgetCalculator.estimate_tokens(final_prompt) - sum(e["tokens"] for e in source_entries)
+        total_tokens = sum(e["tokens"] for e in source_entries) + BudgetCalculator.estimate_tokens(system_prompt) + max(0, template_overhead)
 
         # Verify preflight budget
         if total_tokens > budget.usable_input:

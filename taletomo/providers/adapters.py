@@ -276,13 +276,25 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
 
 class ProviderGateway:
     @staticmethod
-    def get_adapter(config: Optional[ProviderConfig] = None) -> BaseProviderAdapter:
+    def get_adapter(
+        config: Optional[ProviderConfig] = None,
+        user=None,
+        project=None,
+    ) -> BaseProviderAdapter:
+        target_user = user or (project.owner if project else None)
+        if config is not None and target_user and config.user_id != target_user.pk:
+            raise PermissionError("Provider configuration does not belong to the requesting user.")
+
         if config is None:
-            # Fallback to default or fake
-            default_config = ProviderConfig.objects.filter(is_default=True, is_active=True).first()
-            if default_config:
-                return ProviderGateway.get_adapter(default_config)
-            # Create in-memory mock adapter
+            if target_user:
+                user_config = (
+                    ProviderConfig.objects.filter(user=target_user, is_default=True, is_active=True).first()
+                    or ProviderConfig.objects.filter(user=target_user, is_active=True).first()
+                )
+                if user_config:
+                    return ProviderGateway.get_adapter(user_config)
+
+            # Safe Fallback: isolated in-memory mock adapter, never another user's provider
             fake_config = ProviderConfig(
                 name="Fallback Mock",
                 provider_type=ProviderType.FAKE,

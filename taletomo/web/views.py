@@ -3,8 +3,12 @@ import json
 import uuid
 from decimal import Decimal
 from django.contrib import messages
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, login as auth_login
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.views import LoginView
 from django.core.paginator import Paginator
+from django.db import connection, transaction
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -42,18 +46,47 @@ from taletomo.providers.models import ProviderConfig, ProviderType
 User = get_user_model()
 
 
-def _get_current_user(request):
-    if request.user.is_authenticated:
-        return request.user
-    user, _ = User.objects.get_or_create(username="author", defaults={"email": "author@taletomo.local"})
-    return user
+class TaleTomoLoginView(LoginView):
+    template_name = "registration/login.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["setup_available"] = not User.objects.exists()
+        return context
 
 
+@require_http_methods(["GET", "POST"])
+def first_user_setup(request):
+    """Create and sign in the first account; permanently close setup afterward."""
+    if User.objects.exists():
+        messages.info(request, "An account already exists. Please sign in.")
+        return redirect("login")
+
+    form = UserCreationForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            # Serialize simultaneous first-run submissions on the PostgreSQL
+            # Compose deployment so only one account can claim initial setup.
+            if connection.vendor == "postgresql":
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_xact_lock(%s)", [704050041])
+            if User.objects.exists():
+                messages.info(request, "An account was just created. Please sign in.")
+                return redirect("login")
+            user = form.save()
+
+        auth_login(request, user)
+        messages.success(request, "Your account is ready. Welcome to TaleTomo!")
+        return redirect("taletomo:home")
+
+    return render(request, "registration/first_user_setup.html", {"form": form})
+
+
+@login_required
 def home(request):
-    user = _get_current_user(request)
-    recent_projects = Project.objects.filter(owner=user, status="active").order_by("-updated_at")[:6]
-    recent_jobs = GenerationJob.objects.filter(user=user).order_by("-created_at")[:5]
-    total_projects = Project.objects.filter(owner=user).count()
+    recent_projects = Project.objects.filter(owner=request.user, status="active").order_by("-updated_at")[:6]
+    recent_jobs = GenerationJob.objects.filter(user=request.user).order_by("-created_at")[:5]
+    total_projects = Project.objects.filter(owner=request.user).count()
 
     context = {
         "projects": recent_projects,
@@ -63,18 +96,25 @@ def home(request):
     return render(request, "taletomo/home.html", context)
 
 
+@login_required
 def project_list(request):
-    user = _get_current_user(request)
-    projects = Project.objects.filter(owner=user).exclude(status="deleted").order_by("-updated_at")
+    projects = Project.objects.filter(owner=request.user).exclude(status="deleted").order_by("-updated_at")
     return render(request, "taletomo/project_list.html", {"projects": projects})
 
 
+@login_required
 def project_new(request):
-    user = _get_current_user(request)
     if request.method == "POST":
         title = request.POST.get("title", "").strip() or "Untitled Novel"
         premise = request.POST.get("premise", "").strip() or "A mysterious journey begins."
-        target_chapters = int(request.POST.get("target_chapters", 100))
+        try:
+            target_chapters = int(request.POST.get("target_chapters", 100))
+        except (TypeError, ValueError):
+            target_chapters = None
+        if target_chapters is None or not 1 <= target_chapters <= 4000:
+            messages.error(request, "Target chapter count must be between 1 and 4,000.")
+            return render(request, "taletomo/project_new.html", {"presets": ProjectLengthPreset.choices})
+
         length_preset = request.POST.get("length_preset", ProjectLengthPreset.STANDARD)
         genre = request.POST.get("genre", "Fantasy")
         tone = request.POST.get("tone", "Epic, Mysterious")
@@ -87,10 +127,19 @@ def project_new(request):
             ProjectLengthPreset.LONG: 3200,
             ProjectLengthPreset.CUSTOM: 2500,
         }
-        target_words = words_map.get(length_preset, 2200)
+        if length_preset == ProjectLengthPreset.CUSTOM:
+            try:
+                target_words = int(request.POST.get("custom_target_words", ""))
+            except (TypeError, ValueError):
+                target_words = None
+            if target_words is None or not 500 <= target_words <= 10000:
+                messages.error(request, "Custom chapter length must be between 500 and 10,000 words.")
+                return render(request, "taletomo/project_new.html", {"presets": ProjectLengthPreset.choices})
+        else:
+            target_words = words_map.get(length_preset, 2200)
 
         project = PlanningService.create_project_with_scaffold(
-            owner=user,
+            owner=request.user,
             title=title,
             premise=premise,
             target_chapters=target_chapters,
@@ -98,6 +147,7 @@ def project_new(request):
             tone=tone,
             pov=pov,
             tense=tense,
+            length_preset=length_preset,
             target_words_per_chapter=target_words,
         )
 
@@ -107,8 +157,9 @@ def project_new(request):
     return render(request, "taletomo/project_new.html", {"presets": ProjectLengthPreset.choices})
 
 
+@login_required
 def project_overview(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapters_count = project.chapters.count()
     approved_count = project.chapters.filter(status__in=[Chapter.Status.APPROVED, Chapter.Status.LOCKED]).count()
     open_findings = project.continuity_findings.filter(status=FindingStatus.OPEN).count()
@@ -124,8 +175,9 @@ def project_overview(request, project_id):
     return render(request, "taletomo/project_overview.html", context)
 
 
+@login_required
 def project_bible(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     bible = getattr(project, "bible", None)
 
     if request.method == "POST":
@@ -144,8 +196,9 @@ def project_bible(request, project_id):
     return render(request, "taletomo/project_bible.html", {"project": project, "bible": bible})
 
 
+@login_required
 def project_characters(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         role = request.POST.get("role", "neutral")
@@ -166,8 +219,9 @@ def project_characters(request, project_id):
     return render(request, "taletomo/project_characters.html", {"project": project, "characters": characters})
 
 
+@login_required
 def project_locations(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         desc = request.POST.get("description", "").strip()
@@ -181,8 +235,30 @@ def project_locations(request, project_id):
     return render(request, "taletomo/project_locations.html", {"project": project, "locations": locations})
 
 
+@login_required
+def project_factions(request, project_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        goals = request.POST.get("goals", "").strip()
+        resources = request.POST.get("resources", "").strip()
+        if name:
+            Faction.objects.create(
+                project=project,
+                name=name,
+                goals=goals,
+                resources=resources,
+            )
+            messages.success(request, f"Faction '{name}' added.")
+        return redirect("taletomo:project_factions", project_id=project.id)
+
+    factions = project.factions.all()
+    return render(request, "taletomo/project_factions.html", {"project": project, "factions": factions})
+
+
+@login_required
 def project_rules(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     if request.method == "POST":
         title = request.POST.get("title", "").strip()
         category = request.POST.get("category", "magic")
@@ -203,8 +279,9 @@ def project_rules(request, project_id):
     return render(request, "taletomo/project_rules.html", {"project": project, "rules": rules})
 
 
+@login_required
 def project_threads(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     if request.method == "POST":
         title = request.POST.get("title", "").strip()
         cat = request.POST.get("category", "promise")
@@ -218,17 +295,34 @@ def project_threads(request, project_id):
     return render(request, "taletomo/project_threads.html", {"project": project, "threads": threads})
 
 
+@login_required
 def project_timeline(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    if request.method == "POST":
+        title = request.POST.get("title", "").strip()
+        story_time = request.POST.get("story_time", "").strip()
+        order_idx = int(request.POST.get("real_order", project.timeline_events.count() + 1))
+        desc = request.POST.get("description", "").strip()
+        if title:
+            TimelineEvent.objects.create(
+                project=project,
+                title=title,
+                story_time_valid_from=story_time,
+                real_order=order_idx,
+                description=desc,
+            )
+            messages.success(request, f"Timeline event '{title}' added.")
+        return redirect("taletomo:project_timeline", project_id=project.id)
+
     events = project.timeline_events.all().order_by("real_order")
     return render(request, "taletomo/project_timeline.html", {"project": project, "events": events})
 
 
+@login_required
 def project_outline(request, project_id):
     """Hierarchical outline supporting 1 to 4,000 chapters with bounded window pagination."""
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
 
-    # Direct chapter jump support (e.g. ?jump=812)
     jump_chapter = request.GET.get("jump")
     page_size = 25
     chapters_query = project.chapters.all().order_by("chapter_number")
@@ -253,8 +347,9 @@ def project_outline(request, project_id):
     return render(request, "taletomo/project_outline.html", context)
 
 
+@login_required
 def chapter_plan(request, project_id, chapter_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
     plan, _ = ChapterPlan.objects.get_or_create(chapter=chapter)
 
@@ -270,14 +365,20 @@ def chapter_plan(request, project_id, chapter_id):
         plan.prohibited_outcomes = [line.strip() for line in prohibited_raw.split("\n") if line.strip()]
         plan.continuity_requirements = [line.strip() for line in continuity_raw.split("\n") if line.strip()]
         plan.target_words = target_words
-        plan.status = ChapterPlan.Status.APPROVED
-        plan.save()
 
-        chapter.status = Chapter.Status.PLANNED
-        chapter.save(update_fields=["status"])
+        validation_errors = PlanningService.validate_chapter_contract(plan)
+        if validation_errors:
+            for err in validation_errors:
+                messages.error(request, err)
+        else:
+            plan.status = ChapterPlan.Status.APPROVED
+            plan.save()
 
-        messages.success(request, f"Chapter {chapter.chapter_number} contract updated and approved.")
-        return redirect("taletomo:chapter_plan", project_id=project.id, chapter_id=chapter.id)
+            chapter.status = Chapter.Status.PLANNED
+            chapter.save(update_fields=["status"])
+
+            messages.success(request, f"Chapter {chapter.chapter_number} contract updated and approved.")
+            return redirect("taletomo:chapter_plan", project_id=project.id, chapter_id=chapter.id)
 
     scenes = plan.scenes.all()
     context = {
@@ -293,12 +394,12 @@ def chapter_plan(request, project_id, chapter_id):
     return render(request, "taletomo/chapter_plan.html", context)
 
 
+@login_required
 def chapter_edit(request, project_id, chapter_id):
     """3-column authoring environment with Tomo assistant drawer and draft diffs."""
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
 
-    # Nearby chapters for left navigator
     prev_chapter = (
         Chapter.objects.filter(project=project, chapter_number__lt=chapter.chapter_number)
         .order_by("-chapter_number")
@@ -310,7 +411,6 @@ def chapter_edit(request, project_id, chapter_id):
         .first()
     )
 
-    # Drafts
     drafts = chapter.drafts.all().order_by("-version_number")
     active_draft = None
     if chapter.active_draft_id:
@@ -318,7 +418,6 @@ def chapter_edit(request, project_id, chapter_id):
     if not active_draft and drafts.exists():
         active_draft = drafts.first()
 
-    # Previous draft for diff comparison
     prev_draft = None
     diff_html = ""
     if active_draft and active_draft.parent_draft:
@@ -336,15 +435,12 @@ def chapter_edit(request, project_id, chapter_id):
         )
         diff_html = "\n".join(diff_lines)
 
-    # Continuity findings for this chapter
     findings = chapter.continuity_findings.all().order_by("-severity")
     blockers_count = findings.filter(severity=FindingSeverity.BLOCKER, status=FindingStatus.OPEN).count()
 
-    # Manual save
     if request.method == "POST":
         new_prose = request.POST.get("prose_content", "")
         if active_draft:
-            # Create new version from manual edit
             new_v = DraftArtifact.objects.create(
                 chapter=chapter,
                 version_number=drafts.count() + 1,
@@ -377,41 +473,59 @@ def chapter_edit(request, project_id, chapter_id):
     return render(request, "taletomo/chapter_edit.html", context)
 
 
+@login_required
 @require_POST
 def chapter_generate(request, project_id, chapter_id):
-    """Enqueues a durable background job for chapter generation."""
-    project = get_object_or_404(Project, id=project_id)
+    """Enqueues a durable background job for chapter generation with deterministic idempotency."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
-    user = _get_current_user(request)
 
-    idempotency_key = f"draft-{chapter.id}-{uuid.uuid4().hex[:12]}"
+    next_version = chapter.drafts.count() + 1
+    idempotency_key = f"draft-{chapter.id}-v{next_version}"
+
+    # Reuse existing active job if already queued or generating
+    active_job = GenerationJob.objects.filter(
+        idempotency_key=idempotency_key,
+        status__in=[
+            JobStatus.QUEUED,
+            JobStatus.PREPARING_CONTEXT,
+            JobStatus.SUBMITTED,
+            JobStatus.GENERATING,
+            JobStatus.CHECKING,
+        ],
+    ).first()
+    if active_job:
+        messages.info(request, f"Generation job is already running for Chapter {chapter.chapter_number}.")
+        return redirect("taletomo:job_detail", job_id=active_job.id)
+
     job = GenerationJob.objects.create(
         project=project,
-        user=user,
+        user=request.user,
         job_type="chapter_draft",
         idempotency_key=idempotency_key,
         target_chapter_id=chapter.id,
         stage="Queued for generation",
     )
 
-    # Launch Celery task
-    generate_chapter_task.delay(str(job.id))
+    # Launch Celery task on commit
+    transaction.on_commit(lambda: generate_chapter_task.delay(str(job.id)))
 
     messages.info(request, f"Generation job started for Chapter {chapter.chapter_number}.")
     return redirect("taletomo:job_detail", job_id=job.id)
 
 
+@login_required
 @require_POST
 def chapter_approve_draft(request, project_id, chapter_id):
     """Phase 1: Approves the draft prose artifact (distinct from canon commit)."""
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
 
     if not chapter.active_draft_id:
         messages.error(request, "No active draft to approve.")
         return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
 
-    draft = get_object_or_404(DraftArtifact, id=chapter.active_draft_id)
+    draft = get_object_or_404(DraftArtifact, id=chapter.active_draft_id, chapter=chapter)
     draft.status = DraftStatus.ACCEPTED
     draft.save(update_fields=["status"])
 
@@ -426,17 +540,18 @@ def chapter_approve_draft(request, project_id, chapter_id):
     return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
 
 
+@login_required
 @require_POST
 def chapter_commit_canon(request, project_id, chapter_id):
     """Phase 2: Promotes extracted claims into confirmed canonical reality in an atomic commit."""
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
-    user = _get_current_user(request)
 
     expected_head = request.POST.get("expected_head", project.active_branch_head)
     summary_text = request.POST.get("summary", "").strip() or f"Events of Chapter {chapter.chapter_number}"
+    override_blockers = request.POST.get("override_blockers") == "true"
+    override_rationale = request.POST.get("override_rationale", "").strip()
 
-    # Extract default events
     events = [
         {
             "event_type": "chapter_conclusion",
@@ -452,7 +567,9 @@ def chapter_commit_canon(request, project_id, chapter_id):
             expected_head=expected_head,
             events=events,
             facts=[],
-            actor=user,
+            actor=request.user,
+            override_blockers=override_blockers,
+            override_rationale=override_rationale,
         )
         chapter.current_summary = summary_text
         chapter.save(update_fields=["current_summary"])
@@ -463,12 +580,15 @@ def chapter_commit_canon(request, project_id, chapter_id):
         )
     except StaleHeadError as e:
         messages.error(request, f"Commit rejected due to stale branch head: {e}")
+    except ValueError as e:
+        messages.error(request, f"Commit rejected by domain policy: {e}")
 
     return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
 
 
+@login_required
 def chapter_continuity(request, project_id, chapter_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
     findings = chapter.continuity_findings.all().order_by("-severity", "created_at")
 
@@ -480,9 +600,10 @@ def chapter_continuity(request, project_id, chapter_id):
     return render(request, "taletomo/chapter_continuity.html", context)
 
 
+@login_required
 @require_POST
 def finding_update(request, finding_id):
-    finding = get_object_or_404(ContinuityFinding, id=finding_id)
+    finding = get_object_or_404(ContinuityFinding, id=finding_id, project__owner=request.user)
     new_status = request.POST.get("status")
     rationale = request.POST.get("rationale", "")
 
@@ -496,16 +617,18 @@ def finding_update(request, finding_id):
     return redirect("taletomo:chapter_continuity", project_id=finding.project.id, chapter_id=finding.chapter.id)
 
 
+@login_required
 def project_versions(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     drafts = DraftArtifact.objects.filter(chapter__project=project).order_by("-created_at")[:50]
     return render(request, "taletomo/project_versions.html", {"project": project, "drafts": drafts})
 
 
+@login_required
 def compare_drafts(request, project_id, left_id, right_id):
-    project = get_object_or_404(Project, id=project_id)
-    left_draft = get_object_or_404(DraftArtifact, id=left_id)
-    right_draft = get_object_or_404(DraftArtifact, id=right_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    left_draft = get_object_or_404(DraftArtifact, id=left_id, chapter__project=project)
+    right_draft = get_object_or_404(DraftArtifact, id=right_id, chapter__project=project)
 
     diff = difflib.unified_diff(
         left_draft.prose_content.splitlines(),
@@ -527,21 +650,24 @@ def compare_drafts(request, project_id, left_id, right_id):
     )
 
 
+@login_required
 def project_export(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     return render(request, "taletomo/project_export.html", {"project": project})
 
 
+@login_required
 def project_export_markdown(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     md_content = ExportService.export_markdown(project)
     response = HttpResponse(md_content, content_type="text/markdown; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{project.slug or "novel"}.md"'
     return response
 
 
+@login_required
 def project_export_json(request, project_id):
-    project = get_object_or_404(Project, id=project_id)
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
     json_data = ExportService.export_json_backup(project)
     response = HttpResponse(
         json.dumps(json_data, indent=2), content_type="application/json; charset=utf-8"
@@ -550,17 +676,21 @@ def project_export_json(request, project_id):
     return response
 
 
+@login_required
 @require_POST
 def project_restore(request):
-    user = _get_current_user(request)
     upload_file = request.FILES.get("backup_file")
     if not upload_file:
         messages.error(request, "No JSON backup file provided.")
         return redirect("taletomo:project_list")
 
+    if upload_file.size > 25 * 1024 * 1024:
+        messages.error(request, "Backup file exceeds maximum allowed size of 25MB.")
+        return redirect("taletomo:project_list")
+
     try:
         content = json.loads(upload_file.read().decode("utf-8"))
-        restored_project = ExportService.restore_from_json(owner=user, backup_data=content)
+        restored_project = ExportService.restore_from_json(owner=request.user, backup_data=content)
         messages.success(request, f"Successfully restored '{restored_project.title}' from backup!")
         return redirect("taletomo:project_overview", project_id=restored_project.id)
     except Exception as e:
@@ -568,20 +698,22 @@ def project_restore(request):
         return redirect("taletomo:project_list")
 
 
+@login_required
 def job_list(request):
-    user = _get_current_user(request)
-    jobs = GenerationJob.objects.filter(user=user).order_by("-created_at")
+    jobs = GenerationJob.objects.filter(user=request.user).order_by("-created_at")
     return render(request, "taletomo/job_list.html", {"jobs": jobs})
 
 
+@login_required
 def job_detail(request, job_id):
-    job = get_object_or_404(GenerationJob, id=job_id)
+    job = get_object_or_404(GenerationJob, id=job_id, user=request.user)
     return render(request, "taletomo/job_detail.html", {"job": job})
 
 
+@login_required
 def job_status_api(request, job_id):
     """JSON API polled by Vue component for live job progress."""
-    job = get_object_or_404(GenerationJob, id=job_id)
+    job = get_object_or_404(GenerationJob, id=job_id, user=request.user)
     return JsonResponse(
         {
             "id": str(job.id),
@@ -596,9 +728,42 @@ def job_status_api(request, job_id):
     )
 
 
+@login_required
+@require_POST
+def job_cancel(request, job_id):
+    job = get_object_or_404(GenerationJob, id=job_id, user=request.user)
+    if job.status not in (JobStatus.READY, JobStatus.FAILED, JobStatus.CANCELLED):
+        job.status = JobStatus.CANCELLED
+        job.stage = "Cancelled by user"
+        job.save(update_fields=["status", "stage", "updated_at"])
+        messages.info(request, f"Job {job.id} has been cancelled.")
+    return redirect("taletomo:job_detail", job_id=job.id)
+
+
+@login_required
+@require_POST
+def job_retry(request, job_id):
+    job = get_object_or_404(GenerationJob, id=job_id, user=request.user)
+    if job.error_details.get("unknown_outcome"):
+        messages.error(
+            request,
+            "Cannot automatically retry: provider billing status is unknown. Reconcile with the provider before starting another billable attempt.",
+        )
+        return redirect("taletomo:job_detail", job_id=job.id)
+    if job.status in (JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.STALE):
+        job.status = JobStatus.QUEUED
+        job.stage = "Queued for retry"
+        job.progress_pct = 0
+        job.error_message = ""
+        job.save(update_fields=["status", "stage", "progress_pct", "error_message", "updated_at"])
+        transaction.on_commit(lambda: generate_chapter_task.delay(str(job.id)))
+        messages.info(request, f"Job {job.id} has been restarted.")
+    return redirect("taletomo:job_detail", job_id=job.id)
+
+
+@login_required
 def settings_providers(request):
-    user = _get_current_user(request)
-    configs = ProviderConfig.objects.filter(user=user)
+    configs = ProviderConfig.objects.filter(user=request.user)
 
     if request.method == "POST":
         name = request.POST.get("name", "Custom Provider").strip()
@@ -608,7 +773,7 @@ def settings_providers(request):
         model_name = request.POST.get("model_name", "gpt-4o").strip()
 
         cfg = ProviderConfig.objects.create(
-            user=user,
+            user=request.user,
             name=name,
             provider_type=p_type,
             endpoint_url=endpoint or "https://api.openai.com/v1",
@@ -624,12 +789,13 @@ def settings_providers(request):
     return render(request, "taletomo/settings_providers.html", {"configs": configs, "types": ProviderType.choices})
 
 
+@login_required
 @require_POST
 def test_provider(request):
     cfg_id = request.POST.get("config_id")
-    cfg = get_object_or_404(ProviderConfig, id=cfg_id)
+    cfg = get_object_or_404(ProviderConfig, id=cfg_id, user=request.user)
     try:
-        adapter = ProviderGateway.get_adapter(cfg)
+        adapter = ProviderGateway.get_adapter(cfg, user=request.user)
         res = adapter.validate_credentials()
         return JsonResponse({"success": True, "result": res})
     except Exception as e:

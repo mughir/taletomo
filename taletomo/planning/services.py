@@ -7,6 +7,7 @@ from taletomo.planning.models import (
     Chapter,
     ChapterPlan,
     Project,
+    ProjectLengthPreset,
     ScenePlan,
     SeriesBible,
     SeriesSpine,
@@ -29,12 +30,18 @@ class PlanningService:
         language: str = "English",
         pov: str = "Third Person Limited",
         tense: str = "Past Tense",
+        length_preset: str = ProjectLengthPreset.STANDARD,
         target_words_per_chapter: int = 2200,
         content_boundaries: str = "",
         bible_data: Optional[Dict[str, Any]] = None,
         spine_data: Optional[Dict[str, Any]] = None,
     ) -> Project:
         """Initializes a new project with its Bible, Spine, initial Volume, Arc, and rolling Horizon."""
+        if not 1 <= target_chapters <= 4000:
+            raise ValueError("Target chapter count must be between 1 and 4,000.")
+        if not 500 <= target_words_per_chapter <= 10000:
+            raise ValueError("Target chapter length must be between 500 and 10,000 words.")
+
         slug = slugify(title) or "novel"
         base_slug = slug
         counter = 1
@@ -48,6 +55,7 @@ class PlanningService:
             slug=slug,
             premise=premise,
             target_chapters=target_chapters,
+            length_preset=length_preset,
             genre=genre,
             subgenre=subgenre,
             audience=audience,
@@ -175,6 +183,6 @@ class PlanningService:
             errors.append("Chapter contract MUST have at least one objective.")
         if not plan.required_beats:
             errors.append("Chapter contract MUST specify required beats.")
-        if plan.target_words < 500 or plan.target_words > 15000:
-            errors.append(f"Target words ({plan.target_words}) out of valid range (500–15,000).")
+        if plan.target_words < 500 or plan.target_words > 10000:
+            errors.append(f"Target words ({plan.target_words}) out of valid range (500–10,000).")
         return errors

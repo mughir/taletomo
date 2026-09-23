@@ -4,8 +4,10 @@
   <a href="{% url 'taletomo:project_bible' project.id %}" class="subnav-link {% if active_tab == 'bible' %}active{% endif %}">Tomo's Memory (Bible)</a>
   <a href="{% url 'taletomo:project_characters' project.id %}" class="subnav-link {% if active_tab == 'characters' %}active{% endif %}">Characters</a>
   <a href="{% url 'taletomo:project_locations' project.id %}" class="subnav-link {% if active_tab == 'locations' %}active{% endif %}">Locations</a>
+  <a href="{% url 'taletomo:project_factions' project.id %}" class="subnav-link {% if active_tab == 'factions' %}active{% endif %}">Factions</a>
   <a href="{% url 'taletomo:project_rules' project.id %}" class="subnav-link {% if active_tab == 'rules' %}active{% endif %}">World Rules</a>
   <a href="{% url 'taletomo:project_threads' project.id %}" class="subnav-link {% if active_tab == 'threads' %}active{% endif %}">Plot Threads</a>
+  <a href="{% url 'taletomo:project_timeline' project.id %}" class="subnav-link {% if active_tab == 'timeline' %}active{% endif %}">Timeline</a>
   <a href="{% url 'taletomo:project_versions' project.id %}" class="subnav-link {% if active_tab == 'versions' %}active{% endif %}">Versions</a>
   <a href="{% url 'taletomo:project_export' project.id %}" class="subnav-link {% if active_tab == 'export' %}active{% endif %}">Export & Backup</a>
 </div>

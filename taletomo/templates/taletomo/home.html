@@ -1,67 +1,84 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard — {{ app_name }}{% endblock %}
+{% block title %}Writing Desk — {{ app_name }}{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+<section class="page-intro dashboard-intro">
   <div>
-    <h1 style="font-size: 1.8rem; font-weight: 700;">Welcome to {{ app_name }}</h1>
-    <p style="color: var(--text-secondary);">{{ app_tagline }}</p>
+    <p class="eyebrow">YOUR WRITING DESK</p>
+    <h1>Welcome back, {{ request.user.get_username }}</h1>
+    <p>{{ app_tagline }}</p>
   </div>
-  <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">+ Create New Web-Novel</a>
-</div>
+  <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">＋ Start a novel</a>
+</section>
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
-  <div>
-    <div class="card">
-      <div class="card-header">
-        <h2 style="font-size: 1.25rem;">Active Novels ({{ total_projects }})</h2>
-        <a href="{% url 'taletomo:project_list' %}" style="font-size: 0.9rem;">View All</a>
+{% if not total_projects %}
+  <section class="empty-state" aria-labelledby="empty-library-title">
+    <div class="empty-state-rule" aria-hidden="true"></div>
+    <p class="eyebrow">A FRESH PAGE</p>
+    <h2 id="empty-library-title">Your writing desk is ready</h2>
+    <p>Bring a premise, a character, or just a feeling. We’ll help you shape the story into a world you can keep building.</p>
+    <div class="empty-state-actions">
+      <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">Start your first novel</a>
+      <a href="{% url 'taletomo:settings_providers' %}" class="text-link">Set up an AI provider <span aria-hidden="true">→</span></a>
+    </div>
+    <p class="empty-state-note">Your ideas stay yours. Drafts remain yours to review before they become canon.</p>
+  </section>
+{% else %}
+  <div class="dashboard-grid">
+    <section class="content-panel" aria-labelledby="recent-novels-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">YOUR LIBRARY</p>
+          <h2 id="recent-novels-heading">Recently opened</h2>
+        </div>
+        <a href="{% url 'taletomo:project_list' %}" class="text-link">View all {{ total_projects }} <span aria-hidden="true">→</span></a>
       </div>
 
-      {% if projects %}
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          {% for p in projects %}
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-subtle); border-radius: var(--radius-md);">
-              <div>
-                <a href="{% url 'taletomo:project_overview' p.id %}" style="font-weight: 700; font-size: 1.05rem;">{{ p.title }}</a>
-                <p style="color: var(--text-muted); font-size: 0.85rem;">{{ p.genre }} • Target: {{ p.target_chapters }} Chapters • Active head: {{ p.active_branch_head }}</p>
-              </div>
-              <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-secondary btn-sm">Outline & Write</a>
+      <div class="project-list">
+        {% for p in projects %}
+          <article class="project-row">
+            <div class="project-row-main">
+              <p class="project-kicker">{{ p.genre }} <span aria-hidden="true">·</span> {{ p.target_chapters }} chapters planned</p>
+              <h3><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h3>
+              {% if p.premise %}<p class="project-premise">{{ p.premise|truncatewords:24 }}</p>{% endif %}
             </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p style="color: var(--text-muted); padding: 16px 0;">No novels created yet. Grow your first premise into a world!</p>
-        <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary btn-sm">Start Novel Wizard</a>
-      {% endif %}
-    </div>
-  </div>
+            <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-secondary btn-sm">Open outline</a>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
 
-  <div>
-    <div class="card">
-      <div class="card-header">
-        <h2 style="font-size: 1.15rem;">Recent Generation Jobs</h2>
-        <a href="{% url 'taletomo:job_list' %}" style="font-size: 0.85rem;">All Jobs</a>
+    <aside class="content-panel activity-panel" aria-labelledby="activity-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">IN THE BACKGROUND</p>
+          <h2 id="activity-heading">Draft activity</h2>
+        </div>
+        <a href="{% url 'taletomo:job_list' %}" class="text-link" aria-label="View all draft activity">All <span aria-hidden="true">→</span></a>
       </div>
 
       {% if recent_jobs %}
-        <div style="display: flex; flex-direction: column; gap: 10px;">
+        <ol class="activity-list">
           {% for job in recent_jobs %}
-            <div style="padding: 10px; border-left: 3px solid var(--primary); background: var(--bg-subtle); border-radius: 0 var(--radius-md) var(--radius-md) 0;">
-              <div style="display: flex; justify-content: space-between;">
-                <span style="font-weight: 600; font-size: 0.85rem;">{{ job.job_type }}</span>
+            <li class="activity-item">
+              <div class="activity-item-top">
+                <span class="activity-type">{{ job.job_type }}</span>
                 <span class="badge badge-subtle">{{ job.status }}</span>
               </div>
-              <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px;">{{ job.stage }}</p>
-              <a href="{% url 'taletomo:job_detail' job.id %}" style="font-size: 0.8rem; margin-top: 4px; display: inline-block;">Inspect Job →</a>
-            </div>
+              <p>{{ job.project.title }}</p>
+              <span class="activity-stage">{{ job.stage }}</span>
+              <a href="{% url 'taletomo:job_detail' job.id %}" class="activity-link">View job <span aria-hidden="true">→</span></a>
+            </li>
           {% endfor %}
-        </div>
+        </ol>
       {% else %}
-        <p style="color: var(--text-muted); font-size: 0.9rem;">No background jobs yet.</p>
+        <div class="quiet-empty">
+          <p>No drafts in progress.</p>
+          <span>When you ask Tomo to draft a chapter, its progress will show here.</span>
+        </div>
       {% endif %}
-    </div>
+    </aside>
   </div>
-</div>
+{% endif %}
 {% endblock %}

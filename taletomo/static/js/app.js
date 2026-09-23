@@ -5,7 +5,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const jobEl = document.getElementById("job-poller");
   if (jobEl && window.Vue) {
     const { createApp, ref, onMounted } = window.Vue;
-    createApp({
+    const app = createApp({
+      delimiters: ["[[", "]]"],
       setup() {
         const jobId = jobEl.dataset.jobId;
         const status = ref(jobEl.dataset.initialStatus);
@@ -17,7 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const cost = ref(jobEl.dataset.initialCost || "0.00");
 
         const poll = async () => {
-          if (["ready", "failed", "cancelled"].includes(status.value)) return;
+          if (["ready", "failed", "cancelled", "stale"].includes(status.value)) return;
           try {
             const res = await fetch(`/jobs/${jobId}/status/`);
             if (res.ok) {
@@ -33,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
               if (data.status === "ready" && data.result_url) {
                 // Auto redirect or show clear CTA
                 window.location.href = data.result_url;
-              } else if (!["ready", "failed", "cancelled"].includes(data.status)) {
+              } else if (!["ready", "failed", "cancelled", "stale"].includes(data.status)) {
                 setTimeout(poll, 1500);
               }
             }
@@ -44,14 +45,18 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         onMounted(() => {
-          if (!["ready", "failed", "cancelled"].includes(status.value)) {
+          if (!["ready", "failed", "cancelled", "stale"].includes(status.value)) {
             setTimeout(poll, 1000);
           }
         });
 
         return { status, stage, progress, resultUrl, errorMessage, tokens, cost };
       },
-    }).mount("#job-poller");
+    });
+    if (app.config && app.config.compilerOptions) {
+      app.config.compilerOptions.delimiters = ["[[", "]]"];
+    }
+    app.mount("#job-poller");
   }
 
   // 2. Tomo Assistant Drawer

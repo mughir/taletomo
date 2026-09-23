@@ -1,6 +1,8 @@
+import datetime
 from decimal import Decimal
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
+from django.utils import timezone
 from taletomo.context.models import ContextManifest
 from taletomo.core.models import UUIDModel
 from taletomo.planning.models import Chapter, Project
@@ -88,6 +90,47 @@ class GenerationJob(UUIDModel):
             models.Index(fields=["project", "status"]),
             models.Index(fields=["idempotency_key"]),
         ]
+
+    def acquire_lease(self, worker_id: str, duration_seconds: int = 90) -> bool:
+        """Atomically acquires a worker lease using database row lock."""
+        with transaction.atomic():
+            job = GenerationJob.objects.select_for_update().get(id=self.id)
+            now = timezone.now()
+            if (
+                job.lease_worker_id
+                and job.lease_expires_at
+                and job.lease_expires_at > now
+                and job.lease_worker_id != worker_id
+            ):
+                return False
+            job.lease_worker_id = worker_id
+            job.lease_expires_at = now + datetime.timedelta(seconds=duration_seconds)
+            job.save(update_fields=["lease_worker_id", "lease_expires_at", "updated_at"])
+            self.lease_worker_id = job.lease_worker_id
+            self.lease_expires_at = job.lease_expires_at
+            return True
+
+    def renew_lease(self, worker_id: str, extension_seconds: int = 90) -> bool:
+        """Renews worker lease if currently held by worker."""
+        with transaction.atomic():
+            job = GenerationJob.objects.select_for_update().get(id=self.id)
+            if job.lease_worker_id != worker_id:
+                return False
+            job.lease_expires_at = timezone.now() + datetime.timedelta(seconds=extension_seconds)
+            job.save(update_fields=["lease_expires_at", "updated_at"])
+            self.lease_expires_at = job.lease_expires_at
+            return True
+
+    def release_lease(self, worker_id: str = None):
+        """Releases the worker lease."""
+        with transaction.atomic():
+            job = GenerationJob.objects.select_for_update().get(id=self.id)
+            if worker_id is None or job.lease_worker_id == worker_id:
+                job.lease_worker_id = None
+                job.lease_expires_at = None
+                job.save(update_fields=["lease_worker_id", "lease_expires_at", "updated_at"])
+                self.lease_worker_id = None
+                self.lease_expires_at = None
 
     def __str__(self):
         return f"Job {self.id} [{self.job_type}] - {self.status} ({self.progress_pct}%)"

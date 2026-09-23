@@ -2,7 +2,8 @@
 
 > **Product requirements and technical design document**
 >
-> Status: **Revision 2 — implementation-ready greenfield design**  
+> Status: **Revision 2 — target requirements, not a verified implementation**
+> Current working-tree architecture and conformance: [ARCHITECTURE.md](ARCHITECTURE.md)
 > Repository: `D:\projects\novel-maker`  
 > Intended audience: AI coding agents and human developers  
 > Product tagline: **Grow a premise into a world.**  

@@ -13,6 +13,8 @@ class FindingCategory(models.TextChoices):
     PLOT = "plot", "Plot Thread & Beat"
     POV = "pov", "POV & Tense Drift"
     TERMINOLOGY = "terminology", "Terminology & Tone"
+    LENGTH = "length", "Chapter Length"
+    AUTOMATION = "automation", "Automation / Review Required"
 
 
 class FindingSeverity(models.TextChoices):

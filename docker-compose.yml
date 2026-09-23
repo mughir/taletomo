@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: taletomo
       POSTGRES_PASSWORD: taletomo_password
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - taletomo_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +20,7 @@ services:
     image: redis:7-alpine
     container_name: taletomo-redis
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - taletomo_redisdata:/data
     healthcheck:
@@ -32,16 +32,17 @@ services:
   web:
     build: .
     container_name: taletomo-web
-    command: python manage.py runserver 0.0.0.0:8088
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8088"
     volumes:
       - .:/app
     ports:
-      - "8088:8088"
+      - "127.0.0.1:8088:8088"
     environment:
       - DATABASE_URL=postgres://taletomo:taletomo_password@db:5432/taletomo
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=taletomo-dev-secret-key-change-in-production-1234567890
       - DEBUG=True
+      - CELERY_ALWAYS_EAGER=False
     depends_on:
       db:
         condition: service_healthy
@@ -59,6 +60,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=taletomo-dev-secret-key-change-in-production-1234567890
       - DEBUG=True
+      - CELERY_ALWAYS_EAGER=False
     depends_on:
       db:
         condition: service_healthy

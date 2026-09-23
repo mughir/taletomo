@@ -57,6 +57,11 @@ class ProviderConfig(UUIDModel):
     class Meta:
         ordering = ["-is_default", "name"]
 
+    def save(self, *args, **kwargs):
+        if self.is_default and self.user_id:
+            ProviderConfig.objects.filter(user_id=self.user_id, is_default=True).exclude(id=self.id).update(is_default=False)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.name} ({self.get_provider_type_display()})"
 

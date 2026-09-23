@@ -5,12 +5,14 @@ app_name = "taletomo"
 
 urlpatterns = [
     path("", views.home, name="home"),
+    path("setup/", views.first_user_setup, name="first_user_setup"),
     path("projects/", views.project_list, name="project_list"),
     path("projects/new/", views.project_new, name="project_new"),
     path("projects/<uuid:project_id>/", views.project_overview, name="project_overview"),
     path("projects/<uuid:project_id>/bible/", views.project_bible, name="project_bible"),
     path("projects/<uuid:project_id>/characters/", views.project_characters, name="project_characters"),
     path("projects/<uuid:project_id>/locations/", views.project_locations, name="project_locations"),
+    path("projects/<uuid:project_id>/factions/", views.project_factions, name="project_factions"),
     path("projects/<uuid:project_id>/rules/", views.project_rules, name="project_rules"),
     path("projects/<uuid:project_id>/threads/", views.project_threads, name="project_threads"),
     path("projects/<uuid:project_id>/timeline/", views.project_timeline, name="project_timeline"),
@@ -31,6 +33,8 @@ urlpatterns = [
     path("jobs/", views.job_list, name="job_list"),
     path("jobs/<uuid:job_id>/", views.job_detail, name="job_detail"),
     path("jobs/<uuid:job_id>/status/", views.job_status_api, name="job_status_api"),
+    path("jobs/<uuid:job_id>/cancel/", views.job_cancel, name="job_cancel"),
+    path("jobs/<uuid:job_id>/retry/", views.job_retry, name="job_retry"),
     path("settings/providers/", views.settings_providers, name="settings_providers"),
     path("settings/providers/test/", views.test_provider, name="test_provider"),
 ]

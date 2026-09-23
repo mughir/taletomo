@@ -1,54 +1,58 @@
 {% extends "base.html" %}
 
-{% block title %}All Novels — {{ app_name }}{% endblock %}
+{% block title %}My Novels — {{ app_name }}{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+<section class="page-intro">
   <div>
-    <h1 style="font-size: 1.8rem; font-weight: 700;">My Web-Novels</h1>
-    <p style="color: var(--text-secondary);">Manage, outline, and draft long-form web-novels from 1 to 4,000 chapters.</p>
+    <p class="eyebrow">THE LIBRARY</p>
+    <h1>My novels</h1>
+    <p>Your worlds, outlines, and drafts—kept together as each story grows.</p>
   </div>
-  <div style="display: flex; gap: 12px;">
-    <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">+ New Novel</a>
-  </div>
-</div>
+  <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">＋ New novel</a>
+</section>
 
-<div class="card">
-  <div class="card-header">
-    <h2>Restore Project Backup</h2>
+<details class="restore-panel">
+  <summary>Restore a project backup</summary>
+  <div class="restore-panel-content">
+    <p>Choose a TaleTomo JSON export. Restoring creates a separate project; it won’t replace an existing one.</p>
+    <form method="post" action="{% url 'taletomo:project_restore' %}" enctype="multipart/form-data" class="restore-form">
+      {% csrf_token %}
+      <label class="sr-only" for="id_backup_file">Backup JSON file</label>
+      <input id="id_backup_file" type="file" name="backup_file" accept=".json" required class="form-control">
+      <button type="submit" class="btn btn-secondary">Restore backup</button>
+    </form>
   </div>
-  <form method="post" action="{% url 'taletomo:project_restore' %}" enctype="multipart/form-data" style="display: flex; gap: 12px; align-items: center;">
-    {% csrf_token %}
-    <input type="file" name="backup_file" accept=".json" required class="form-control" style="max-width: 320px;">
-    <button type="submit" class="btn btn-secondary">Restore from JSON</button>
-  </form>
-</div>
+</details>
 
-<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
-  {% for p in projects %}
-    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-      <div>
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-          <h2 style="font-size: 1.3rem;"><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h2>
-          <span class="badge badge-subtle">{{ p.target_chapters }} Chs</span>
+{% if projects %}
+  <section class="library-grid" aria-label="Novel projects">
+    {% for p in projects %}
+      <article class="library-card">
+        <div class="library-card-topline">
+          <span class="project-kicker">{{ p.genre }}</span>
+          <span class="badge badge-subtle">{{ p.target_chapters }} chapters</span>
         </div>
-        <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 12px;">{{ p.premise|truncatewords:25 }}</p>
-        <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
-          <span><strong>Genre:</strong> {{ p.genre }}</span>
-          <span>•</span>
-          <span><strong>Tone:</strong> {{ p.tone }}</span>
-          <span>•</span>
-          <span><strong>Head:</strong> {{ p.active_branch_head }}</span>
+        <h2><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h2>
+        <p class="library-premise">{{ p.premise|truncatewords:28 }}</p>
+        <dl class="library-meta">
+          <div><dt>Tone</dt><dd>{{ p.tone }}</dd></div>
+          <div><dt>Canon revision</dt><dd>{{ p.active_branch_head }}</dd></div>
+        </dl>
+        <div class="library-card-actions">
+          <a href="{% url 'taletomo:project_overview' p.id %}" class="btn btn-secondary btn-sm">Story details</a>
+          <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-primary btn-sm">Open outline</a>
         </div>
-      </div>
-
-      <div style="display: flex; gap: 8px; border-top: 1px solid var(--border-color); padding-top: 12px;">
-        <a href="{% url 'taletomo:project_overview' p.id %}" class="btn btn-secondary btn-sm" style="flex: 1;">Overview</a>
-        <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-primary btn-sm" style="flex: 1;">Outline</a>
-      </div>
-    </div>
-  {% empty %}
-    <p style="color: var(--text-muted);">No projects found.</p>
-  {% endfor %}
-</div>
+      </article>
+    {% endfor %}
+  </section>
+{% else %}
+  <section class="empty-state library-empty" aria-labelledby="library-empty-title">
+    <div class="empty-state-rule" aria-hidden="true"></div>
+    <p class="eyebrow">NOTHING ON THE SHELF YET</p>
+    <h2 id="library-empty-title">Every long story starts somewhere</h2>
+    <p>Start with the idea you keep coming back to. You can refine the world, voice, and chapter plan as you go.</p>
+    <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">Create your first novel</a>
+  </section>
+{% endif %}
 {% endblock %}

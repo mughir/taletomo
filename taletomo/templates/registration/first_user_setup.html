@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Create Your Account — {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="auth-layout" aria-labelledby="setup-heading">
+  {% include "taletomo/_auth_story.html" %}
+  <div class="auth-card card">
+    <p class="eyebrow">FIRST-RUN SETUP</p>
+    <h1 id="setup-heading">Create your account</h1>
+    <p class="auth-card-intro">Choose a username and password. This one-time setup closes after your account is created—there is no default password.</p>
+
+    {% if form.non_field_errors %}
+      <div class="message message-error" role="alert">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <form method="post" action="{% url 'taletomo:first_user_setup' %}" class="auth-form">
+      {% csrf_token %}
+      {% for field in form %}
+        <div class="form-group">
+          <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}
+            <div class="field-help">{{ field.help_text|safe }}</div>
+          {% endif %}
+          {% for error in field.errors %}
+            <div class="message message-error field-error" role="alert">{{ error }}</div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+      <button type="submit" class="btn btn-primary auth-submit">Create account and continue <span aria-hidden="true">→</span></button>
+    </form>
+
+    <p class="auth-switch">Already set up? <a href="{% url 'login' %}">Sign in</a></p>
+  </div>
+</section>
+{% endblock %}

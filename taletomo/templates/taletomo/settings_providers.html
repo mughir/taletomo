@@ -5,7 +5,7 @@
 {% block content %}
 <div style="margin-bottom: 24px;">
   <h1 style="font-size: 2rem; font-weight: 700;">AI Provider Configurations</h1>
-  <p style="color: var(--text-secondary);">Bring-your-own-key model providers. All credentials are encrypted at rest with AES-GCM.</p>
+  <p style="color: var(--text-secondary);">Bring-your-own-key model providers. All credentials are encrypted at rest with authenticated Fernet (AES-128-CBC + HMAC-SHA256) encryption.</p>
 </div>
 
 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
