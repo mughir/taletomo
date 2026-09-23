@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import uuid
 from typing import Any, Dict, List, Optional
 from taletomo.canon.models import Character, WorldRule
 from taletomo.consistency.models import (
@@ -15,6 +16,15 @@ from taletomo.providers.adapters import BaseProviderAdapter
 logger = logging.getLogger(__name__)
 
 
+def _clean_draft_id(draft_id: Optional[Any]) -> Optional[uuid.UUID]:
+    if not draft_id:
+        return None
+    try:
+        return uuid.UUID(str(draft_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 class ContinuityChecker:
     @staticmethod
     def run_deterministic_checks(chapter: Chapter, prose: str, draft_id: Optional[str] = None) -> List[ContinuityFinding]:
@@ -22,17 +32,20 @@ class ContinuityChecker:
         findings = []
         project = chapter.project
         prose_lower = prose.lower()
+        clean_id = _clean_draft_id(draft_id)
 
         # 1. Dead character check
         dead_characters = Character.objects.filter(project=project, is_alive=False)
         for char in dead_characters:
+            if not char.name or not char.name.strip():
+                continue
             pattern = rf"\b{re.escape(char.name.lower())}\b"
             if re.search(pattern, prose_lower):
                 findings.append(
                     ContinuityFinding(
                         project=project,
                         chapter=chapter,
-                        draft_id=draft_id,
+                        draft_id=clean_id,
                         category=FindingCategory.IDENTITY,
                         severity=FindingSeverity.WARNING,
                         confidence=0.6,
@@ -64,7 +77,7 @@ class ContinuityChecker:
                             ContinuityFinding(
                                 project=project,
                                 chapter=chapter,
-                                draft_id=draft_id,
+                                draft_id=clean_id,
                                 category=FindingCategory.INJURY,
                                 severity=FindingSeverity.BLOCKER,
                                 confidence=0.95,
@@ -77,16 +90,17 @@ class ContinuityChecker:
 
         # 3. Prohibited outcomes check from Chapter Contract
         plan = getattr(chapter, "plan", None)
-        if plan and plan.prohibited_outcomes:
+        if plan and plan.prohibited_outcomes and isinstance(plan.prohibited_outcomes, list):
             for prohibited in plan.prohibited_outcomes:
-                # Basic check for direct prohibited phrase occurrences
+                if not isinstance(prohibited, str):
+                    continue
                 clean_prob = prohibited.lower().replace("do not ", "").replace("never ", "").strip()
                 if clean_prob and len(clean_prob) > 10 and clean_prob in prose_lower:
                     findings.append(
                         ContinuityFinding(
                             project=project,
                             chapter=chapter,
-                            draft_id=draft_id,
+                            draft_id=clean_id,
                             category=FindingCategory.PLOT,
                             severity=FindingSeverity.BLOCKER,
                             confidence=0.8,
@@ -100,13 +114,15 @@ class ContinuityChecker:
         # 4. World Rules forbidden violations
         rules = WorldRule.objects.filter(project=project).exclude(forbidden_violations="")
         for rule in rules:
+            if not isinstance(rule.forbidden_violations, str):
+                continue
             clean_violation = rule.forbidden_violations.lower().strip()
             if clean_violation and clean_violation in prose_lower:
                 findings.append(
                     ContinuityFinding(
                         project=project,
                         chapter=chapter,
-                        draft_id=draft_id,
+                        draft_id=clean_id,
                         category=FindingCategory.RULE,
                         severity=FindingSeverity.BLOCKER,
                         confidence=0.85,
@@ -128,6 +144,7 @@ class ContinuityChecker:
         draft_id: Optional[str] = None,
     ) -> List[ContinuityFinding]:
         """Runs LLM critique against the drafted chapter to identify subtle literary or continuity drift."""
+        clean_id = _clean_draft_id(draft_id)
         system_prompt = (
             "You are a strict story editor and continuity auditor. Analyze the following chapter draft "
             "against the provided contract and canonical constraints. Output ONLY a valid JSON list of findings. "
@@ -155,6 +172,8 @@ class ContinuityChecker:
 
             findings = []
             for item in parsed:
+                if not isinstance(item, dict):
+                    continue
                 cat = item.get("category")
                 if cat not in FindingCategory.values:
                     cat = FindingCategory.PLOT
@@ -162,18 +181,31 @@ class ContinuityChecker:
                 if sev not in FindingSeverity.values:
                     sev = FindingSeverity.WARNING
 
+                conf_val = item.get("confidence", 0.8)
+                try:
+                    conf = float(conf_val)
+                except (TypeError, ValueError):
+                    conf = 0.8
+
+                conf_ev = item.get("conflicting_evidence", [])
+                if not isinstance(conf_ev, list):
+                    conf_ev = [str(conf_ev)] if conf_ev else []
+                src_ref = item.get("source_references", [])
+                if not isinstance(src_ref, list):
+                    src_ref = [str(src_ref)] if src_ref else []
+
                 findings.append(
                     ContinuityFinding(
                         project=chapter.project,
                         chapter=chapter,
-                        draft_id=draft_id,
+                        draft_id=clean_id,
                         category=cat,
                         severity=sev,
-                        confidence=float(item.get("confidence", 0.8)),
-                        claim=item.get("claim", "Potential continuity inconsistency"),
-                        conflicting_evidence=item.get("conflicting_evidence", []),
-                        source_references=item.get("source_references", []),
-                        suggested_action=item.get("suggested_action", ""),
+                        confidence=conf,
+                        claim=str(item.get("claim") or "Potential continuity inconsistency"),
+                        conflicting_evidence=conf_ev,
+                        source_references=src_ref,
+                        suggested_action=str(item.get("suggested_action") or ""),
                     )
                 )
             return findings
@@ -184,7 +216,7 @@ class ContinuityChecker:
                 ContinuityFinding(
                     project=chapter.project,
                     chapter=chapter,
-                    draft_id=draft_id,
+                    draft_id=clean_id,
                     category=FindingCategory.AUTOMATION,
                     severity=FindingSeverity.ADVISORY,
                     confidence=0.5,

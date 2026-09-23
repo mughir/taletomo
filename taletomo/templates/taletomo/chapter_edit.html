@@ -138,13 +138,22 @@
               <strong>Commit story facts</strong>
               <small>Add a short summary and lock this chapter into canon.</small>
             </div>
-            {% if chapter.status != 'locked' and active_draft %}
+            {% if chapter.status == 'approved' and active_draft %}
               <form method="post" action="{% url 'taletomo:chapter_commit_canon' project.id chapter.id %}" class="canon-commit-form">
                 {% csrf_token %}
                 <input type="hidden" name="expected_head" value="{{ project.active_branch_head }}">
                 <label class="sr-only" for="id_canon_summary">Canon summary</label>
                 <input id="id_canon_summary" type="text" name="summary" class="form-control" placeholder="What changed in the story?" value="{{ chapter.current_summary|default:'' }}">
-                <button type="submit" class="btn btn-primary btn-sm" {% if blockers_count > 0 %}disabled title="Resolve blocker findings first"{% endif %}>Commit to canon</button>
+                {% if blockers_count > 0 %}
+                  <div class="override-blockers-box" style="margin-top: 0.5rem;">
+                    <label style="font-size: 0.85rem; display: block;">
+                      <input type="checkbox" name="override_blockers" value="true" id="override_checkbox" onchange="document.getElementById('commit-canon-btn').disabled = !this.checked;">
+                      Override {{ blockers_count }} continuity blocker{{ blockers_count|pluralize }}
+                    </label>
+                    <input type="text" name="override_rationale" class="form-control form-control-sm" placeholder="Author rationale for override (required)" style="margin-top: 0.25rem;">
+                  </div>
+                {% endif %}
+                <button type="submit" id="commit-canon-btn" class="btn btn-primary btn-sm" {% if blockers_count > 0 %}disabled title="Resolve blocker findings or check override"{% endif %}>Commit to canon</button>
               </form>
             {% elif chapter.status == 'locked' %}
               <span class="approval-pending">This chapter is committed.</span>

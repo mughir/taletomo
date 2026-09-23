@@ -63,8 +63,45 @@ def test_export_markdown_and_json_restore_parity():
     assert restored.title == "The Glass Empress"
     assert restored.target_chapters == 12
     assert restored.chapters.count() == project.chapters.count()
+    assert restored.slug == project.slug
+    assert restored.tolerance_percent == project.tolerance_percent
+    assert restored.prose_language == project.prose_language
 
     restored_ch1 = Chapter.objects.get(project=restored, chapter_number=1)
     assert restored_ch1.drafts.count() == 1
     assert "gears turned" in restored_ch1.drafts.first().prose_content
     assert restored.canon_facts.filter(subject="Glass Throne").exists()
+
+
+@pytest.mark.django_db
+def test_restore_rejects_non_dict_payload():
+    user = User.objects.create(username="invalid_backup_user")
+    with pytest.raises(ValueError, match="Backup data must be a JSON object"):
+        ExportService.restore_from_json(owner=user, backup_data=["not", "a", "dict"])
+
+
+@pytest.mark.django_db
+def test_restore_handles_unmapped_story_event_chapter():
+    user = User.objects.create(username="event_author")
+    project = PlanningService.create_project_with_scaffold(
+        owner=user,
+        title="Eventful Journey",
+        premise="Testing events.",
+        target_chapters=3,
+    )
+    backup_json = ExportService.export_json_backup(project)
+    # Tamper with an event to reference an unmapped chapter number 999
+    backup_json["canon"]["events"].append({
+        "chapter_number": 999,
+        "event_type": "lore_drop",
+        "summary": "Ancient knowledge revealed",
+        "payload": {},
+    })
+    # Recompute checksum
+    import hashlib
+    raw_payload = json.dumps({k: v for k, v in backup_json.items() if k != "manifest"}, sort_keys=True)
+    backup_json["manifest"]["checksum_sha256"] = hashlib.sha256(raw_payload.encode("utf-8")).hexdigest()
+
+    restored = ExportService.restore_from_json(owner=user, backup_data=backup_json)
+    assert restored.story_events.filter(event_type="lore_drop").exists()
+

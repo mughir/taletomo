@@ -1,6 +1,6 @@
 import json
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 import httpx
 from pydantic import BaseModel, Field
@@ -9,6 +9,15 @@ from taletomo.providers.models import ProviderConfig, ProviderType
 from taletomo.providers.security import validate_provider_endpoint
 
 logger = logging.getLogger(__name__)
+
+
+def safe_decimal(val, default="0.0") -> Decimal:
+    if val is None or val == "":
+        return Decimal(default)
+    try:
+        return Decimal(str(val))
+    except Exception:
+        return Decimal(default)
 
 
 class ProviderResponse(BaseModel):
@@ -241,20 +250,25 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
                     raise RuntimeError(f"Provider error ({response.status_code}): {safe_err}")
 
                 data = response.json()
-                choice = data["choices"][0]
-                content = choice["message"]["content"]
+                choices = data.get("choices", [])
+                if not choices:
+                    raise RuntimeError("Provider returned empty choices array.")
+                choice = choices[0]
+                message = choice.get("message", {})
+                content = message.get("content") or ""
                 usage = data.get("usage", {})
-                p_tokens = usage.get("prompt_tokens", 0)
-                c_tokens = usage.get("completion_tokens", 0)
-                t_tokens = usage.get("total_tokens", p_tokens + c_tokens)
+                p_tokens = int(usage.get("prompt_tokens") or 0)
+                c_tokens = int(usage.get("completion_tokens") or 0)
+                t_tokens = int(usage.get("total_tokens") or (p_tokens + c_tokens))
 
                 # Calculate estimated cost if pricing profile is available
-                profile = self.config.model_profiles.get(selected_model, {})
-                price_in = Decimal(str(profile.get("pricing_input_per_m", "0.0")))
-                price_out = Decimal(str(profile.get("pricing_output_per_m", "0.0")))
-                cost = (Decimal(p_tokens) * price_in / Decimal(1000000)) + (
+                profile = self.config.model_profiles.get(selected_model, {}) if isinstance(self.config.model_profiles, dict) else {}
+                price_in = safe_decimal(profile.get("pricing_input_per_m"), "0.0")
+                price_out = safe_decimal(profile.get("pricing_output_per_m"), "0.0")
+                raw_cost = (Decimal(p_tokens) * price_in / Decimal(1000000)) + (
                     Decimal(c_tokens) * price_out / Decimal(1000000)
                 )
+                cost = raw_cost.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
                 return ProviderResponse(
                     content=content,
@@ -292,7 +306,7 @@ class ProviderGateway:
                     or ProviderConfig.objects.filter(user=target_user, is_active=True).first()
                 )
                 if user_config:
-                    return ProviderGateway.get_adapter(user_config)
+                    return ProviderGateway.get_adapter(user_config, user=target_user)
 
             # Safe Fallback: isolated in-memory mock adapter, never another user's provider
             fake_config = ProviderConfig(

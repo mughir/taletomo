@@ -1,8 +1,9 @@
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from taletomo.canon.models import CanonFact, Character, Location, PlotThread, TruthScope, WorldRule
+from taletomo.canon.models import CanonFact, Character, Faction, Location, PlotThread, TruthScope, WorldRule
 from taletomo.context.budget import BudgetCalculator, TokenBudget
 from taletomo.context.models import ContextManifest
 from taletomo.planning.models import Chapter, ChapterPlan, ScenePlan, SeriesBible
@@ -114,12 +115,32 @@ class ContextAssembler:
         characters = Character.objects.filter(project=project)
         for char in characters[:15]:
             char_desc = f"Character: {char.name} ({char.role}). Status: {'Alive' if char.is_alive else 'Dead'}."
+            if char.goals:
+                char_desc += f" Goals: {char.goals}."
             if char.wounds_status:
                 char_desc += f" Wounds: {char.wounds_status}."
             if char.beliefs:
                 char_desc += f" Beliefs: {json.dumps(char.beliefs)}."
             if record_entry(str(char.id), "state", char_desc, priority=2):
                 state_parts.append(char_desc)
+
+        # Locations
+        locations = Location.objects.filter(project=project)
+        for loc in locations[:5]:
+            loc_desc = f"Location: {loc.name}. Description: {loc.description}."
+            if loc.travel_rules:
+                loc_desc += f" Travel Rules: {loc.travel_rules}."
+            if record_entry(str(loc.id), "state", loc_desc, priority=2):
+                state_parts.append(loc_desc)
+
+        # Factions
+        factions = Faction.objects.filter(project=project)
+        for fac in factions[:5]:
+            fac_desc = f"Faction: {fac.name}. Goals: {fac.goals}."
+            if fac.resources:
+                fac_desc += f" Resources: {fac.resources}."
+            if record_entry(str(fac.id), "state", fac_desc, priority=2):
+                state_parts.append(fac_desc)
 
         # Active rules
         rules = WorldRule.objects.filter(project=project)
@@ -130,9 +151,10 @@ class ContextAssembler:
             if record_entry(str(rule.id), "state", r_desc, priority=1):
                 state_parts.append(r_desc)
 
-        # Active plot threads
+        # Active plot threads (only those introduced up to current chapter)
         threads = PlotThread.objects.filter(
             project=project,
+            setup_chapter__lte=chapter.chapter_number,
             status__in=[PlotThread.Status.OPEN, PlotThread.Status.PROGRESSING],
         )
         for thread in threads[:10]:
@@ -150,16 +172,14 @@ class ContextAssembler:
         )
         for fact in confirmed_facts:
             # Check provenance against chapter number to prevent future leakage
-            if fact.provenance.startswith("Chapter "):
-                try:
-                    ch_prov = int(fact.provenance.replace("Chapter ", "").split()[0])
-                    if ch_prov >= chapter.chapter_number and fact.truth_scope not in (
-                        TruthScope.PLAN_ONLY,
-                        TruthScope.AUTHOR_NOTE,
-                    ):
-                        continue  # Anti-leakage: exclude future fact!
-                except Exception:
-                    pass
+            match = re.search(r"Chapter\s+(\d+)", fact.provenance, re.IGNORECASE)
+            if match:
+                ch_prov = int(match.group(1))
+                if ch_prov >= chapter.chapter_number and fact.truth_scope not in (
+                    TruthScope.PLAN_ONLY,
+                    TruthScope.AUTHOR_NOTE,
+                ):
+                    continue  # Anti-leakage: exclude future fact!
 
             fact_line = f"Canon Fact: {fact.subject} {fact.predicate} '{fact.value}' ({fact.truth_scope})"
             if record_entry(str(fact.id), "retrieval", fact_line, priority=3):

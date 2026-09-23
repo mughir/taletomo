@@ -158,10 +158,14 @@ class CanonService:
         old_head = current_project.active_branch_head
         current_project.active_branch_head = next_head
         current_project.save(update_fields=["active_branch_head", "updated_at"])
+        project.active_branch_head = next_head
 
-        # 5. Lock Chapter
+        # 5. Lock Chapter and Plan
         chapter.status = Chapter.Status.LOCKED
         chapter.save(update_fields=["status", "updated_at"])
+        if plan:
+            plan.status = ChapterPlan.Status.LOCKED
+            plan.save(update_fields=["status", "updated_at"])
 
         # 6. Capture Materialized Snapshot
         mat_state = CanonService.get_materialized_state(current_project)

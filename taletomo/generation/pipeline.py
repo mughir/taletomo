@@ -1,7 +1,7 @@
 import datetime
 import logging
-from decimal import Decimal
-from django.db import transaction
+from decimal import Decimal, ROUND_HALF_UP
+from django.db import models, transaction
 from django.utils import timezone
 from taletomo.consistency.checker import ContinuityChecker
 from taletomo.consistency.models import ContinuityFinding, FindingCategory, FindingSeverity
@@ -57,6 +57,12 @@ class GenerationPipeline:
                 requested_output_tokens=4000,
             )
 
+            # Check if job was cancelled while preparing context
+            job.refresh_from_db()
+            if job.status == JobStatus.CANCELLED:
+                logger.info(f"Job {job.id} was cancelled before provider call.")
+                return None
+
             # Atomic Budget Reservation
             reservation = BudgetReservation.objects.create(
                 user=job.user,
@@ -105,9 +111,10 @@ class GenerationPipeline:
             if reservation:
                 reservation.reconcile(tokens_used=resp.total_tokens, cost_usd=resp.cost_usd)
 
-            # Determine draft version
-            existing_count = DraftArtifact.objects.filter(chapter=chapter).count()
-            version_number = existing_count + 1
+            # Determine draft version using Max and link parent draft
+            max_v = DraftArtifact.objects.filter(chapter=chapter).aggregate(max_v=models.Max("version_number"))["max_v"]
+            version_number = (max_v + 1) if max_v else 1
+            latest_draft = DraftArtifact.objects.filter(chapter=chapter).order_by("-version_number").first()
 
             word_count = len(resp.content.split())
             chapter_plan = getattr(chapter, "plan", None)
@@ -125,12 +132,14 @@ class GenerationPipeline:
                 model_name=resp.model or model_name,
                 prompt_version="v1",
                 context_manifest=ctx_package.manifest,
+                parent_draft=latest_draft,
                 status=DraftStatus.UNDER_REVIEW,
             )
 
+            quantized_cost = resp.cost_usd.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
             job.draft_artifact = draft
             job.confirmed_tokens = resp.total_tokens
-            job.confirmed_cost = resp.cost_usd
+            job.confirmed_cost = quantized_cost
             job.save(update_fields=["draft_artifact", "confirmed_tokens", "confirmed_cost", "updated_at"])
 
             # 3. Transition to CHECKING (Continuity check)

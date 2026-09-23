@@ -78,15 +78,22 @@ class ProviderConfig(UUIDModel):
         if not self.encrypted_api_key:
             return ""
         box = get_secret_box()
-        return box.decrypt(self.encrypted_api_key, self.key_version)
+        try:
+            return box.decrypt(self.encrypted_api_key, self.key_version)
+        except Exception:
+            return ""
 
     def get_masked_key(self) -> str:
         raw = self.get_api_key()
         return mask_secret(raw)
 
     def get_model_context_limit(self, model_name: str) -> int:
-        profile = self.model_profiles.get(model_name, {})
-        return profile.get("context_limit", 128000)
+        profile = self.model_profiles.get(model_name, {}) if isinstance(self.model_profiles, dict) else {}
+        val = profile.get("context_limit")
+        try:
+            return int(val) if val else 128000
+        except (TypeError, ValueError):
+            return 128000
 
 
 class BudgetReservation(UUIDModel):
@@ -119,8 +126,11 @@ class BudgetReservation(UUIDModel):
         ]
 
     def reconcile(self, tokens_used: int, cost_usd: Decimal):
-        self.confirmed_tokens = tokens_used
-        self.confirmed_cost_usd = cost_usd
+        from decimal import ROUND_HALF_UP
+        self.confirmed_tokens = max(0, int(tokens_used or 0))
+        if not isinstance(cost_usd, Decimal):
+            cost_usd = Decimal(str(cost_usd or "0.0000"))
+        self.confirmed_cost_usd = cost_usd.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         self.status = self.Status.RECONCILED
         self.save(update_fields=["confirmed_tokens", "confirmed_cost_usd", "status", "updated_at"])
 

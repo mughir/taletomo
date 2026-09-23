@@ -9,6 +9,7 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.views import LoginView
 from django.core.paginator import Paginator
 from django.db import connection, transaction
+from django.db.models import Max
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -16,6 +17,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from taletomo.canon.models import (
     CanonFact,
     Character,
+    CharacterRole,
     Faction,
     Location,
     PlotThread,
@@ -41,7 +43,8 @@ from taletomo.planning.models import (
 )
 from taletomo.planning.services import PlanningService
 from taletomo.providers.adapters import ProviderGateway
-from taletomo.providers.models import ProviderConfig, ProviderType
+from taletomo.providers.models import BudgetReservation, ProviderConfig, ProviderType
+from taletomo.providers.security import SSRFSecurityError, validate_endpoint_url
 
 User = get_user_model()
 
@@ -201,7 +204,9 @@ def project_characters(request, project_id):
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
-        role = request.POST.get("role", "neutral")
+        role = request.POST.get("role", CharacterRole.NEUTRAL)
+        if role not in CharacterRole.values:
+            role = CharacterRole.NEUTRAL
         wounds = request.POST.get("wounds_status", "").strip()
         goals = request.POST.get("goals", "").strip()
         if name:
@@ -261,7 +266,9 @@ def project_rules(request, project_id):
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     if request.method == "POST":
         title = request.POST.get("title", "").strip()
-        category = request.POST.get("category", "magic")
+        category = request.POST.get("category", WorldRule.Category.MAGIC)
+        if category not in WorldRule.Category.values:
+            category = WorldRule.Category.MAGIC
         statement = request.POST.get("rule_statement", "").strip()
         forbidden = request.POST.get("forbidden_violations", "").strip()
         if title and statement:
@@ -284,8 +291,13 @@ def project_threads(request, project_id):
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     if request.method == "POST":
         title = request.POST.get("title", "").strip()
-        cat = request.POST.get("category", "promise")
-        ch_setup = int(request.POST.get("setup_chapter", 1))
+        cat = request.POST.get("category", PlotThread.Category.PROMISE)
+        if cat not in PlotThread.Category.values:
+            cat = PlotThread.Category.PROMISE
+        try:
+            ch_setup = int(request.POST.get("setup_chapter", 1))
+        except (TypeError, ValueError):
+            ch_setup = 1
         if title:
             PlotThread.objects.create(project=project, title=title, category=cat, setup_chapter=ch_setup)
             messages.success(request, f"Plot Thread '{title}' created.")
@@ -301,7 +313,10 @@ def project_timeline(request, project_id):
     if request.method == "POST":
         title = request.POST.get("title", "").strip()
         story_time = request.POST.get("story_time", "").strip()
-        order_idx = int(request.POST.get("real_order", project.timeline_events.count() + 1))
+        try:
+            order_idx = int(request.POST.get("real_order", project.timeline_events.count() + 1))
+        except (TypeError, ValueError):
+            order_idx = project.timeline_events.count() + 1
         desc = request.POST.get("description", "").strip()
         if title:
             TimelineEvent.objects.create(
@@ -325,14 +340,18 @@ def project_outline(request, project_id):
 
     jump_chapter = request.GET.get("jump")
     page_size = 25
-    chapters_query = project.chapters.all().order_by("chapter_number")
+    chapters_query = (
+        project.chapters.select_related("plan")
+        .prefetch_related("plan__scenes")
+        .order_by("chapter_number")
+    )
 
     paginator = Paginator(chapters_query, page_size)
     page_number = request.GET.get("page", 1)
 
     if jump_chapter and jump_chapter.isdigit():
         target_num = int(jump_chapter)
-        page_number = max(1, (target_num - 1) // page_size + 1)
+        page_number = max(1, min((target_num - 1) // page_size + 1, paginator.num_pages or 1))
 
     page_obj = paginator.get_page(page_number)
     volumes = project.volumes.all().prefetch_related("arcs")
@@ -354,11 +373,18 @@ def chapter_plan(request, project_id, chapter_id):
     plan, _ = ChapterPlan.objects.get_or_create(chapter=chapter)
 
     if request.method == "POST":
+        if chapter.status == Chapter.Status.LOCKED:
+            messages.error(request, "Chapter is locked. Contracts for committed canon cannot be modified.")
+            return redirect("taletomo:chapter_plan", project_id=project.id, chapter_id=chapter.id)
+
         objectives_raw = request.POST.get("objectives", "")
         beats_raw = request.POST.get("required_beats", "")
         prohibited_raw = request.POST.get("prohibited_outcomes", "")
         continuity_raw = request.POST.get("continuity_requirements", "")
-        target_words = int(request.POST.get("target_words", project.target_words_per_chapter))
+        try:
+            target_words = int(request.POST.get("target_words", project.target_words_per_chapter))
+        except (TypeError, ValueError):
+            target_words = project.target_words_per_chapter
 
         plan.objectives = [line.strip() for line in objectives_raw.split("\n") if line.strip()]
         plan.required_beats = [line.strip() for line in beats_raw.split("\n") if line.strip()]
@@ -374,8 +400,9 @@ def chapter_plan(request, project_id, chapter_id):
             plan.status = ChapterPlan.Status.APPROVED
             plan.save()
 
-            chapter.status = Chapter.Status.PLANNED
-            chapter.save(update_fields=["status"])
+            if chapter.status in (Chapter.Status.UNPLANNED, Chapter.Status.PLANNED):
+                chapter.status = Chapter.Status.PLANNED
+                chapter.save(update_fields=["status"])
 
             messages.success(request, f"Chapter {chapter.chapter_number} contract updated and approved.")
             return redirect("taletomo:chapter_plan", project_id=project.id, chapter_id=chapter.id)
@@ -439,22 +466,30 @@ def chapter_edit(request, project_id, chapter_id):
     blockers_count = findings.filter(severity=FindingSeverity.BLOCKER, status=FindingStatus.OPEN).count()
 
     if request.method == "POST":
-        new_prose = request.POST.get("prose_content", "")
-        if active_draft:
-            new_v = DraftArtifact.objects.create(
-                chapter=chapter,
-                version_number=drafts.count() + 1,
-                prose_content=new_prose,
-                word_count=len(new_prose.split()),
-                model_name="Manual Author Edit",
-                parent_draft=active_draft,
-                status=DraftStatus.UNDER_REVIEW,
-            )
-            chapter.active_draft_id = new_v.id
-            chapter.current_word_count = new_v.word_count
-            chapter.save(update_fields=["active_draft_id", "current_word_count"])
-            messages.success(request, f"New version {new_v.version_number} saved.")
+        if chapter.status == Chapter.Status.LOCKED:
+            messages.error(request, "Chapter is locked. Canonical chapters cannot be modified.")
             return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
+
+        new_prose = request.POST.get("prose_content", "")
+        next_version = (chapter.drafts.aggregate(max_v=Max("version_number"))["max_v"] or 0) + 1
+        new_v = DraftArtifact.objects.create(
+            chapter=chapter,
+            version_number=next_version,
+            prose_content=new_prose,
+            word_count=len(new_prose.split()),
+            model_name="Manual Author Edit",
+            parent_draft=active_draft,
+            status=DraftStatus.UNDER_REVIEW,
+        )
+        chapter.active_draft_id = new_v.id
+        chapter.current_word_count = new_v.word_count
+        if chapter.status in (Chapter.Status.UNPLANNED, Chapter.Status.PLANNED, Chapter.Status.DRAFTING):
+            chapter.status = Chapter.Status.REVIEW
+            chapter.save(update_fields=["active_draft_id", "current_word_count", "status"])
+        else:
+            chapter.save(update_fields=["active_draft_id", "current_word_count"])
+        messages.success(request, f"New version {new_v.version_number} saved.")
+        return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
 
     context = {
         "project": project,
@@ -480,7 +515,11 @@ def chapter_generate(request, project_id, chapter_id):
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
 
-    next_version = chapter.drafts.count() + 1
+    if chapter.status == Chapter.Status.LOCKED:
+        messages.error(request, "Chapter is locked. Cannot generate new drafts for committed canon.")
+        return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
+
+    next_version = (chapter.drafts.aggregate(max_v=Max("version_number"))["max_v"] or 0) + 1
     idempotency_key = f"draft-{chapter.id}-v{next_version}"
 
     # Reuse existing active job if already queued or generating
@@ -520,6 +559,10 @@ def chapter_approve_draft(request, project_id, chapter_id):
     """Phase 1: Approves the draft prose artifact (distinct from canon commit)."""
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    if chapter.status == Chapter.Status.LOCKED:
+        messages.error(request, "Chapter is locked. Committed canon cannot be re-approved.")
+        return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
 
     if not chapter.active_draft_id:
         messages.error(request, "No active draft to approve.")
@@ -605,9 +648,13 @@ def chapter_continuity(request, project_id, chapter_id):
 def finding_update(request, finding_id):
     finding = get_object_or_404(ContinuityFinding, id=finding_id, project__owner=request.user)
     new_status = request.POST.get("status")
-    rationale = request.POST.get("rationale", "")
+    rationale = request.POST.get("rationale", "").strip()
 
     if new_status in FindingStatus.values:
+        if finding.severity == FindingSeverity.BLOCKER and new_status in (FindingStatus.INTENTIONAL, FindingStatus.DISMISSED):
+            if not rationale:
+                messages.error(request, "A non-empty rationale is required to dismiss or mark a blocking finding as intentional.")
+                return redirect("taletomo:chapter_continuity", project_id=finding.project.id, chapter_id=finding.chapter.id)
         finding.status = new_status
         if rationale:
             finding.override_rationale = rationale
@@ -629,6 +676,9 @@ def compare_drafts(request, project_id, left_id, right_id):
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     left_draft = get_object_or_404(DraftArtifact, id=left_id, chapter__project=project)
     right_draft = get_object_or_404(DraftArtifact, id=right_id, chapter__project=project)
+
+    if left_draft.chapter_id != right_draft.chapter_id:
+        raise Http404("Drafts must belong to the same chapter.")
 
     diff = difflib.unified_diff(
         left_draft.prose_content.splitlines(),
@@ -736,6 +786,8 @@ def job_cancel(request, job_id):
         job.status = JobStatus.CANCELLED
         job.stage = "Cancelled by user"
         job.save(update_fields=["status", "stage", "updated_at"])
+        for res in BudgetReservation.objects.filter(job_id=job.id, status=BudgetReservation.Status.RESERVED):
+            res.release()
         messages.info(request, f"Job {job.id} has been cancelled.")
     return redirect("taletomo:job_detail", job_id=job.id)
 
@@ -772,13 +824,23 @@ def settings_providers(request):
         api_key = request.POST.get("api_key", "").strip()
         model_name = request.POST.get("model_name", "gpt-4o").strip()
 
+        endpoint_val = endpoint or "https://api.openai.com/v1"
+        try:
+            validate_endpoint_url(endpoint_val)
+        except SSRFSecurityError as err:
+            messages.error(request, f"Invalid provider endpoint URL: {err}")
+            return redirect("taletomo:settings_providers")
+
+        is_first = not ProviderConfig.objects.filter(user=request.user).exists()
         cfg = ProviderConfig.objects.create(
             user=request.user,
             name=name,
             provider_type=p_type,
-            endpoint_url=endpoint or "https://api.openai.com/v1",
+            endpoint_url=endpoint_val,
             default_drafting_model=model_name,
             default_planning_model=model_name,
+            is_default=is_first,
+            is_active=True,
         )
         if api_key:
             cfg.set_api_key(api_key)
@@ -793,7 +855,11 @@ def settings_providers(request):
 @require_POST
 def test_provider(request):
     cfg_id = request.POST.get("config_id")
-    cfg = get_object_or_404(ProviderConfig, id=cfg_id, user=request.user)
+    try:
+        cfg_uuid = uuid.UUID(str(cfg_id))
+    except (ValueError, TypeError):
+        return JsonResponse({"success": False, "error": "Invalid config_id"}, status=400)
+    cfg = get_object_or_404(ProviderConfig, id=cfg_uuid, user=request.user)
     try:
         adapter = ProviderGateway.get_adapter(cfg, user=request.user)
         res = adapter.validate_credentials()

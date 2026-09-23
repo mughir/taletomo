@@ -8,18 +8,22 @@ class SSRFValidationError(ValueError):
     pass
 
 
+SSRFSecurityError = SSRFValidationError
+
+
 BLOCKED_NETWORKS = [
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),    # Carrier-grade NAT
     ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),  # AWS/GCP metadata 169.254.169.254
+    ipaddress.ip_network("169.254.0.0/16"),   # AWS/GCP metadata 169.254.169.254
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("224.0.0.0/4"),     # Multicast
-    ipaddress.ip_network("240.0.0.0/4"),     # Reserved
-    ipaddress.ip_network("::1/128"),         # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),        # IPv6 ULA
-    ipaddress.ip_network("fe80::/10"),       # IPv6 link-local
+    ipaddress.ip_network("224.0.0.0/4"),      # Multicast
+    ipaddress.ip_network("240.0.0.0/4"),      # Reserved
+    ipaddress.ip_network("::1/128"),          # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),         # IPv6 ULA
+    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
 ]
 
 
@@ -58,10 +62,30 @@ def validate_provider_endpoint(url: str, allowlist: list[str] = None) -> bool:
         ip_str = sockaddr[0]
         ip_obj = ipaddress.ip_address(ip_str)
 
+        # Unmap IPv4-mapped IPv6 address (e.g. ::ffff:127.0.0.1 -> 127.0.0.1)
+        if isinstance(ip_obj, ipaddress.IPv6Address) and getattr(ip_obj, "ipv4_mapped", None):
+            ip_obj = ip_obj.ipv4_mapped
+
+        # Check built-in IP classification properties
+        if (
+            ip_obj.is_loopback
+            or ip_obj.is_private
+            or ip_obj.is_link_local
+            or ip_obj.is_reserved
+            or ip_obj.is_multicast
+            or ip_obj.is_unspecified
+        ):
+            raise SSRFValidationError(
+                f"Endpoint resolved to forbidden internal/private network IP: {ip_str}"
+            )
+
         for blocked in BLOCKED_NETWORKS:
-            if ip_obj in blocked:
+            if ip_obj.version == blocked.version and ip_obj in blocked:
                 raise SSRFValidationError(
                     f"Endpoint resolved to forbidden internal/private network IP: {ip_str} (network: {blocked})"
                 )
 
     return True
+
+
+validate_endpoint_url = validate_provider_endpoint

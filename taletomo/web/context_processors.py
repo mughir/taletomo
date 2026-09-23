@@ -4,8 +4,10 @@ from taletomo.providers.models import ProviderConfig
 
 def taletomo_context(request):
     """Provides global navigation and active provider info."""
-    user = request.user if request.user.is_authenticated else None
-    active_provider = ProviderConfig.objects.filter(is_active=True).first()
+    active_provider = None
+    if getattr(request, "user", None) and request.user.is_authenticated:
+        active_provider = ProviderConfig.objects.filter(user=request.user, is_active=True).first()
+
     return {
         "active_provider": active_provider,
         "app_name": "TaleTomo",
