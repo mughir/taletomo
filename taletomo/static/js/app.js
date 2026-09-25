@@ -1,7 +1,92 @@
-// TaleTomo Island Controllers (Vue 3 vendored)
+// TaleTomo Island Controllers (Vue 3 vendored) + motion choreography
 
 document.addEventListener("DOMContentLoaded", () => {
-  // 1. Job Poller Component
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // 1. Scroll reveal choreography — transform/opacity only, IntersectionObserver-driven
+  if (!prefersReducedMotion && "IntersectionObserver" in window) {
+    const revealTargets = document.querySelectorAll(
+      [
+        ".main-container > section",
+        ".main-container > div:not(.messages-container)",
+        ".main-container > form",
+        ".page-intro",
+        ".hero-band",
+        ".empty-state",
+        ".dashboard-grid > *",
+        ".bento > *",
+        ".library-grid > *",
+        ".form-layout > *",
+        ".split-grid > *",
+        ".duo-grid > *",
+        ".card",
+        ".table-wrap",
+        ".project-row",
+        ".activity-item",
+        ".item-card",
+        ".subnav",
+        ".writer-header",
+        ".writer-layout > *",
+      ].join(", ")
+    );
+
+    revealTargets.forEach((el) => {
+      if (el.closest(".mobile-menu") || el.classList.contains("reveal")) return;
+      el.classList.add("reveal");
+      const siblings = el.parentElement
+        ? Array.from(el.parentElement.children).filter((c) => c.classList.contains("reveal"))
+        : [];
+      const indexInParent = siblings.indexOf(el);
+      el.style.setProperty("--reveal-i", Math.min(indexInParent < 0 ? 0 : indexInParent, 8));
+    });
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-inview");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.08, rootMargin: "0px 0px -6% 0px" }
+    );
+    revealTargets.forEach((el) => observer.observe(el));
+  }
+
+  // 2. Fluid island menu — hamburger morphs, overlay reveals with stagger
+  const toggle = document.querySelector(".nav-toggle");
+  const menu = document.getElementById("mobile-menu");
+  if (toggle && menu) {
+    let closeTimer = null;
+    const setOpen = (open) => {
+      document.body.classList.toggle("menu-open", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      if (open) {
+        clearTimeout(closeTimer);
+        menu.hidden = false;
+      } else {
+        closeTimer = setTimeout(() => {
+          menu.hidden = true;
+        }, 650);
+      }
+    };
+    toggle.addEventListener("click", () => {
+      setOpen(!document.body.classList.contains("menu-open"));
+    });
+    menu.addEventListener("click", (event) => {
+      if (event.target.closest("a") || event.target.closest("button")) setOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && document.body.classList.contains("menu-open")) {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+  }
+
+  // 3. Job Poller Component
   const jobEl = document.getElementById("job-poller");
   if (jobEl && window.Vue) {
     const { createApp, ref, onMounted } = window.Vue;
@@ -59,7 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
     app.mount("#job-poller");
   }
 
-  // 2. Tomo Assistant Drawer
+  // 4. Tomo Assistant Drawer
   const tomoEl = document.getElementById("tomo-drawer");
   if (tomoEl && window.Vue) {
     const { createApp, ref } = window.Vue;
@@ -71,7 +156,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }).mount("#tomo-drawer");
   }
 
-  // 3. Manuscript Word Count Counter
+  // 5. Manuscript Word Count Counter
   const textarea = document.getElementById("prose-textarea");
   const counter = document.getElementById("word-count-display");
   if (textarea && counter) {

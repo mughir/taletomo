@@ -6,7 +6,7 @@
 <section class="auth-layout" aria-labelledby="setup-heading">
   {% include "taletomo/_auth_story.html" %}
   <div class="auth-card card">
-    <p class="eyebrow">FIRST-RUN SETUP</p>
+    <p class="eyebrow-pill">First-run setup</p>
     <h1 id="setup-heading">Create your account</h1>
     <p class="auth-card-intro">Choose a username and password. This one-time setup closes after your account is created—there is no default password.</p>
 
@@ -28,7 +28,7 @@
           {% endfor %}
         </div>
       {% endfor %}
-      <button type="submit" class="btn btn-primary auth-submit">Create account and continue <span aria-hidden="true">→</span></button>
+      <button type="submit" class="btn btn-primary btn-cta auth-submit">Create account and continue <span class="btn-cta-chip" aria-hidden="true">→</span></button>
     </form>
 
     <p class="auth-switch">Already set up? <a href="{% url 'login' %}">Sign in</a></p>

@@ -3,14 +3,15 @@
 {% block title %}Job {{ job.id }} — {{ app_name }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 24px;">
-  <h1 style="font-size: 2rem; font-weight: 700;">Workflow Job Monitor</h1>
-  <p style="color: var(--text-secondary);">Durable workflow execution tracking for {{ job.project.title }}.</p>
-</div>
+<header class="page-head">
+  <p class="eyebrow-pill">Workflow monitor</p>
+  <h1>Workflow job monitor</h1>
+  <p>Durable workflow execution tracking for {{ job.project.title }}.</p>
+</header>
 
 <!-- Reactive Vue Polling Island -->
-<div class="card" 
-     id="job-poller" 
+<div class="card"
+     id="job-poller"
      data-job-id="{{ job.id }}"
      data-initial-status="{{ job.status }}"
      data-initial-stage="{{ job.stage }}"
@@ -20,26 +21,25 @@
      data-initial-tokens="{{ job.confirmed_tokens }}"
      data-initial-cost="{{ job.confirmed_cost }}">
 
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+  <div class="job-head-row">
     <div>
-      <h2 style="font-size: 1.3rem;">Operation: {{ job.job_type }}</h2>
-      <p style="color: var(--text-muted); font-size: 0.85rem; font-family: var(--font-mono);">
+      <h2>Operation: {{ job.job_type }}</h2>
+      <p class="job-id-line">
         ID: {{ job.id }} | Idempotency Key: {{ job.idempotency_key }}
       </p>
     </div>
 
     <div>
-      <span class="badge" 
-            :class="status === 'ready' ? 'badge-success' : (status === 'failed' ? 'badge-blocker' : 'badge-subtle')"
-            style="font-size: 0.95rem; padding: 6px 12px;">
+      <span class="badge"
+            :class="status === 'ready' ? 'badge-success' : (status === 'failed' ? 'badge-blocker' : 'badge-subtle')">
         [[ status.toUpperCase() ]]
       </span>
     </div>
   </div>
 
-  <div style="margin: 20px 0;">
-    <div style="display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 6px;">
-      <span>Current Stage: [[ stage ]]</span>
+  <div class="job-progress-block">
+    <div class="job-progress-labels">
+      <span>Current stage: [[ stage ]]</span>
       <span>[[ progress ]]%</span>
     </div>
     <div class="progress-bar-container">
@@ -47,46 +47,46 @@
     </div>
   </div>
 
-  <div v-if="errorMessage" class="message message-error" style="margin-top: 16px;">
+  <div v-if="errorMessage" class="message message-error" role="alert">
     <strong>Error:</strong> [[ errorMessage ]]
   </div>
 
   {% if job.error_details.unknown_outcome %}
-    <div class="message message-error" role="alert" style="margin-top: 16px;">
+    <div class="message message-error" role="alert">
       Provider billing status is unknown. Automatic retry is disabled until the provider outcome is reconciled.
     </div>
   {% endif %}
 
-  <div v-if="resultUrl && status === 'ready'" style="margin-top: 20px; padding: 16px; background: var(--success-bg); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+  <div v-if="resultUrl && status === 'ready'" class="job-done-panel">
     <div>
-      <strong style="color: var(--success); font-size: 1.05rem;">Generation Completed Successfully!</strong>
-      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">
+      <strong>Generation completed successfully!</strong>
+      <p>
         Tokens used: [[ tokens ]] • Cost: $[[ cost ]] USD
       </p>
     </div>
-    <a :href="resultUrl" class="btn btn-success">View Generated Draft in Editor →</a>
+    <a :href="resultUrl" class="btn btn-success">View generated draft in editor →</a>
   </div>
 
-  <div style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px; display: flex; justify-content: space-between; align-items: center;">
-    <div style="display: flex; gap: 12px;">
-      <a href="{% url 'taletomo:project_overview' job.project.id %}" class="btn btn-secondary">Return to Novel</a>
-      <a href="{% url 'taletomo:job_list' %}" class="btn btn-secondary">All Jobs</a>
+  <div class="job-footer">
+    <div class="page-actions">
+      <a href="{% url 'taletomo:project_overview' job.project.id %}" class="btn btn-secondary">Return to novel</a>
+      <a href="{% url 'taletomo:job_list' %}" class="btn btn-secondary">All jobs</a>
     </div>
 
-    <div style="display: flex; gap: 12px;">
+    <div class="page-actions">
       {% if job.status in "queued preparing_context submitted generating checking" %}
-        <form method="post" action="{% url 'taletomo:job_cancel' job.id %}" style="margin: 0;">
+        <form method="post" action="{% url 'taletomo:job_cancel' job.id %}" class="inline-form">
           {% csrf_token %}
           <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this background generation job?');">
-            Cancel Job
+            Cancel job
           </button>
         </form>
       {% endif %}
       {% if job.status in "failed cancelled stale" and not job.error_details.unknown_outcome %}
-        <form method="post" action="{% url 'taletomo:job_retry' job.id %}" style="margin: 0;">
+        <form method="post" action="{% url 'taletomo:job_retry' job.id %}" class="inline-form">
           {% csrf_token %}
           <button type="submit" class="btn btn-primary btn-sm">
-            Retry Job
+            Retry job
           </button>
         </form>
       {% endif %}

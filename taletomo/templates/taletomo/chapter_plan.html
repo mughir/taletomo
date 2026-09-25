@@ -3,65 +3,66 @@
 {% block title %}Contract for Chapter {{ chapter.chapter_number }} — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-  <div>
-    <h1 style="font-size: 2rem; font-weight: 700;">Chapter {{ chapter.chapter_number }} Contract</h1>
-    <p style="color: var(--text-secondary);">Specification for planning, drafting, and checking Chapter {{ chapter.chapter_number }}.</p>
+<header class="page-head-row">
+  <div class="page-head">
+    <p class="eyebrow-pill">The contract</p>
+    <h1>Chapter {{ chapter.chapter_number }} contract</h1>
+    <p>Specification for planning, drafting, and checking Chapter {{ chapter.chapter_number }}.</p>
   </div>
-  <div style="display: flex; gap: 8px;">
-    <a href="{% url 'taletomo:chapter_edit' project.id chapter.id %}" class="btn btn-secondary">Open Editor</a>
+  <div class="page-actions">
+    <a href="{% url 'taletomo:chapter_edit' project.id chapter.id %}" class="btn btn-secondary">Open editor</a>
   </div>
-</div>
+</header>
 
 <form method="post" class="card">
   {% csrf_token %}
 
   <div class="form-group">
-    <label for="id_objectives" class="form-label">Narrative Objectives (One per line)</label>
+    <label for="id_objectives" class="form-label">Narrative objectives (one per line)</label>
     <textarea id="id_objectives" name="objectives" class="form-control" rows="3" required placeholder="What must be accomplished in this chapter?">{{ objectives_text }}</textarea>
   </div>
 
   <div class="form-group">
-    <label for="id_required_beats" class="form-label">Required Story Beats (One per line)</label>
+    <label for="id_required_beats" class="form-label">Required story beats (one per line)</label>
     <textarea id="id_required_beats" name="required_beats" class="form-control" rows="3" required placeholder="Key scene milestones and moments">{{ beats_text }}</textarea>
   </div>
 
   <div class="form-group">
-    <label for="id_prohibited_outcomes" class="form-label">Prohibited Outcomes (One per line)</label>
+    <label for="id_prohibited_outcomes" class="form-label">Prohibited outcomes (one per line)</label>
     <textarea id="id_prohibited_outcomes" name="prohibited_outcomes" class="form-control" rows="2" placeholder="Outcomes that must NOT happen yet (e.g. Do not reveal the traitor)">{{ prohibited_text }}</textarea>
-    <small style="color: var(--text-muted);">Continuity engine will flag drafts that prematurely trigger these outcomes.</small>
+    <small class="field-note">Continuity engine will flag drafts that prematurely trigger these outcomes.</small>
   </div>
 
   <div class="form-group">
-    <label for="id_continuity_requirements" class="form-label">Specific Continuity Requirements</label>
+    <label for="id_continuity_requirements" class="form-label">Specific continuity requirements</label>
     <textarea id="id_continuity_requirements" name="continuity_requirements" class="form-control" rows="2" placeholder="e.g. Alaric's left hand remains injured">{{ continuity_text }}</textarea>
   </div>
 
   <div class="form-group">
-    <label for="id_target_words" class="form-label">Target Words</label>
-    <input type="number" id="id_target_words" name="target_words" class="form-control" value="{{ plan.target_words }}" style="max-width: 200px;">
+    <label for="id_target_words" class="form-label">Target words</label>
+    <input type="number" id="id_target_words" name="target_words" class="form-control target-words-input" value="{{ plan.target_words }}">
   </div>
 
-  <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
-    <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-secondary">Back to Outline</a>
-    <button type="submit" class="btn btn-primary">Approve Contract</button>
+  <div class="form-actions">
+    <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-quiet">Back to outline</a>
+    <button type="submit" class="btn btn-primary btn-cta">Approve contract <span class="btn-cta-chip" aria-hidden="true">→</span></button>
   </div>
 </form>
 
 {% if scenes %}
   <div class="card">
     <div class="card-header">
-      <h2>Scene Breakdown ({{ scenes.count }} Scenes)</h2>
+      <h2>Scene breakdown ({{ scenes.count }} scenes)</h2>
     </div>
-    <div style="display: flex; flex-direction: column; gap: 12px;">
+    <div class="stack">
       {% for s in scenes %}
-        <div style="padding: 12px; background: var(--bg-subtle); border-radius: var(--radius-md);">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-weight: 700;">Scene {{ s.scene_order }}: {{ s.objective }}</span>
+        <div class="item-card">
+          <div class="item-card-head">
+            <span class="item-title">Scene {{ s.scene_order }}: {{ s.objective }}</span>
             <span class="badge badge-subtle">~{{ s.estimated_words }} words</span>
           </div>
           {% if s.conflict %}
-            <p style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 4px;"><strong>Conflict:</strong> {{ s.conflict }}</p>
+            <p class="item-meta"><strong>Conflict:</strong> {{ s.conflict }}</p>
           {% endif %}
         </div>
       {% endfor %}

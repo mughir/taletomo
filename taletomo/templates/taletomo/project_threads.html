@@ -3,29 +3,30 @@
 {% block title %}Plot Threads — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 24px;">
-  <h1 style="font-size: 2rem; font-weight: 700;">Plot Threads & Promises</h1>
-  <p style="color: var(--text-secondary);">Track narrative promises, mysteries, personal debts, and payoffs.</p>
-</div>
+<header class="page-head">
+  <p class="eyebrow-pill">Promises to keep</p>
+  <h1>Plot threads &amp; promises</h1>
+  <p>Track narrative promises, mysteries, personal debts, and payoffs.</p>
+</header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="threads" %}
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+<div class="split-grid">
   <div>
     <div class="card">
       <div class="card-header">
-        <h2>Plot Threads Ledger ({{ threads.count }})</h2>
+        <h2>Plot threads ledger ({{ threads.count }})</h2>
       </div>
 
       {% if threads %}
-        <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="stack">
           {% for t in threads %}
-            <div style="padding: 12px; background: var(--bg-subtle); border-radius: var(--radius-md);">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 700; font-size: 1.05rem;">{{ t.title }}</span>
+            <div class="item-card is-brass">
+              <div class="item-card-head">
+                <span class="item-title">{{ t.title }}</span>
                 <span class="badge badge-subtle">{{ t.get_status_display }}</span>
               </div>
-              <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+              <p class="item-subtle">
                 Category: <strong>{{ t.get_category_display }}</strong> • Introduced in Chapter {{ t.setup_chapter }}
                 {% if t.payoff_chapter %}• Payoff Chapter: {{ t.payoff_chapter }}{% endif %}
               </p>
@@ -33,7 +34,7 @@
           {% endfor %}
         </div>
       {% else %}
-        <p style="color: var(--text-muted);">No open plot threads recorded.</p>
+        <p class="text-muted">No open plot threads recorded.</p>
       {% endif %}
     </div>
   </div>
@@ -41,12 +42,12 @@
   <div>
     <div class="card">
       <div class="card-header">
-        <h2>Add Plot Thread</h2>
+        <h2>Add plot thread</h2>
       </div>
       <form method="post">
         {% csrf_token %}
         <div class="form-group">
-          <label for="id_thread_title" class="form-label">Thread Title</label>
+          <label for="id_thread_title" class="form-label">Thread title</label>
           <input type="text" id="id_thread_title" name="title" class="form-control" required placeholder="e.g. Identity of the Masked Alchemist">
         </div>
 
@@ -61,11 +62,11 @@
         </div>
 
         <div class="form-group">
-          <label for="id_setup_chapter" class="form-label">Setup Chapter Number</label>
+          <label for="id_setup_chapter" class="form-label">Setup chapter number</label>
           <input type="number" id="id_setup_chapter" name="setup_chapter" class="form-control" value="1" min="1">
         </div>
 
-        <button type="submit" class="btn btn-primary" style="width: 100%;">Create Plot Thread</button>
+        <button type="submit" class="btn btn-primary btn-cta btn-block">Create plot thread <span class="btn-cta-chip" aria-hidden="true">→</span></button>
       </form>
     </div>
   </div>

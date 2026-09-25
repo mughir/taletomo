@@ -3,79 +3,75 @@
 {% block title %}Outline & Chapters — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-  <div>
-    <h1 style="font-size: 2rem; font-weight: 700;">Novel Outline & Manuscript</h1>
-    <p style="color: var(--text-secondary);">
-      Displaying chapters {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total_chapters }} (Target: {{ project.target_chapters }} Chapters)
+<header class="page-head-row">
+  <div class="page-head">
+    <p class="eyebrow-pill">The manuscript</p>
+    <h1>Novel outline &amp; manuscript</h1>
+    <p>
+      Displaying chapters {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total_chapters }}
+      (Target: {{ project.target_chapters }} chapters)
     </p>
   </div>
 
   <!-- Direct Chapter Jump Form (scales up to 4,000 chapters) -->
-  <form method="get" style="display: flex; gap: 8px; align-items: center;">
-    <label for="id_jump" style="font-size: 0.9rem; font-weight: 600;">Jump to Chapter:</label>
-    <input type="number" id="id_jump" name="jump" class="form-control" style="width: 100px;" min="1" max="{{ project.target_chapters }}" placeholder="e.g. 1">
+  <form method="get" class="jump-form">
+    <label for="id_jump">Jump to chapter:</label>
+    <input type="number" id="id_jump" name="jump" class="form-control" min="1" max="{{ project.target_chapters }}" placeholder="e.g. 1">
     <button type="submit" class="btn btn-secondary btn-sm">Go</button>
   </form>
-</div>
+</header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="outline" %}
 
-<div class="card" style="padding: 0; overflow: hidden;">
-  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+<div class="table-wrap">
+  <table class="data-table">
     <thead>
-      <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border-color); font-size: 0.85rem; color: var(--text-secondary);">
-        <th style="padding: 12px 16px;">#</th>
-        <th style="padding: 12px 16px;">Chapter Title</th>
-        <th style="padding: 12px 16px;">Status</th>
-        <th style="padding: 12px 16px;">Words</th>
-        <th style="padding: 12px 16px;">Contract / Beats</th>
-        <th style="padding: 12px 16px; text-align: right;">Actions</th>
+      <tr>
+        <th scope="col">#</th>
+        <th scope="col">Chapter title</th>
+        <th scope="col">Status</th>
+        <th scope="col">Words</th>
+        <th scope="col">Contract / beats</th>
+        <th scope="col" class="cell-actions">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for ch in page_obj %}
-        <tr style="border-bottom: 1px solid var(--border-color); font-size: 0.95rem;">
-          <td style="padding: 12px 16px; font-weight: 700; color: var(--text-muted);">{{ ch.chapter_number }}</td>
-          <td style="padding: 12px 16px;">
-            <a href="{% url 'taletomo:chapter_edit' project.id ch.id %}" style="font-weight: 600;">
-              {{ ch.title|default:"Untitled Chapter" }}
-            </a>
+        <tr>
+          <td class="is-strong is-numeric">{{ ch.chapter_number }}</td>
+          <td>
+            <a href="{% url 'taletomo:chapter_edit' project.id ch.id %}" class="is-strong">{{ ch.title|default:"Untitled Chapter" }}</a>
             {% if ch.current_summary %}
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">{{ ch.current_summary|truncatewords:12 }}</p>
+              <p class="is-muted cell-note">{{ ch.current_summary|truncatewords:12 }}</p>
             {% endif %}
           </td>
-          <td style="padding: 12px 16px;">
+          <td>
             {% if ch.status == 'approved' or ch.status == 'locked' %}
               <span class="badge badge-success">✓ {{ ch.get_status_display }}</span>
             {% elif ch.status == 'review' %}
-              <span class="badge badge-warning">▲ Under Review</span>
+              <span class="badge badge-warning">▲ Under review</span>
             {% elif ch.status == 'planned' %}
               <span class="badge badge-subtle">Planned</span>
             {% else %}
               <span class="badge badge-subtle">{{ ch.get_status_display }}</span>
             {% endif %}
           </td>
-          <td style="padding: 12px 16px;">
-            {{ ch.current_word_count }} / {{ project.target_words_per_chapter }}
-          </td>
-          <td style="padding: 12px 16px; font-size: 0.85rem;">
+          <td class="is-numeric">{{ ch.current_word_count }} / {{ project.target_words_per_chapter }}</td>
+          <td class="is-muted">
             {% if ch.plan %}
-              <span style="color: var(--text-secondary);">{{ ch.plan.objectives|length }} Objectives • {{ ch.plan.scenes.count }} Scenes</span>
+              {{ ch.plan.objectives|length }} objectives • {{ ch.plan.scenes.count }} scenes
             {% else %}
-              <span style="color: var(--text-muted);">(No contract)</span>
+              (No contract)
             {% endif %}
           </td>
-          <td style="padding: 12px 16px; text-align: right;">
+          <td class="cell-actions">
             <a href="{% url 'taletomo:chapter_plan' project.id ch.id %}" class="btn btn-secondary btn-sm">Contract</a>
-            <a href="{% url 'taletomo:chapter_edit' project.id ch.id %}" class="btn btn-primary btn-sm">Write / Review</a>
+            <a href="{% url 'taletomo:chapter_edit' project.id ch.id %}" class="btn btn-primary btn-sm">Write / review</a>
           </td>
         </tr>
       {% empty %}
         <tr>
-          <td colspan="6" style="padding: 24px; text-align: center; color: var(--text-muted);">
-            No chapters found.
-          </td>
+          <td colspan="6" class="table-empty">No chapters found.</td>
         </tr>
       {% endfor %}
     </tbody>
@@ -83,11 +79,9 @@
 
   <!-- Bounded Pagination for 4,000 chapters scale -->
   {% if paginator.num_pages > 1 %}
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--bg-subtle);">
-      <div>
-        Page {{ page_obj.number }} of {{ paginator.num_pages }}
-      </div>
-      <div style="display: flex; gap: 8px;">
+    <div class="table-footer">
+      <div>Page {{ page_obj.number }} of {{ paginator.num_pages }}</div>
+      <div class="pagination-bar">
         {% if page_obj.has_previous %}
           <a href="?page=1" class="btn btn-secondary btn-sm">« First</a>
           <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-secondary btn-sm">‹ Prev</a>

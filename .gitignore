@@ -33,3 +33,6 @@ Thumbs.db
 # IDE & Tooling
 .hermes/
 
+
+# Local visual review artifacts
+.visreview/

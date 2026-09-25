@@ -6,7 +6,7 @@
 <section class="auth-layout" aria-labelledby="signin-heading">
   {% include "taletomo/_auth_story.html" %}
   <div class="auth-card card">
-    <p class="eyebrow">WELCOME BACK</p>
+    <p class="eyebrow-pill">Welcome back</p>
     <h1 id="signin-heading">Return to your story</h1>
     <p class="auth-card-intro">Sign in to pick up where your world left off.</p>
 
@@ -25,7 +25,7 @@
         <label for="id_password" class="form-label">Password</label>
         <input type="password" name="password" id="id_password" required autocomplete="current-password" class="form-control">
       </div>
-      <button type="submit" class="btn btn-primary auth-submit">Sign in</button>
+      <button type="submit" class="btn btn-primary btn-cta auth-submit">Sign in <span class="btn-cta-chip" aria-hidden="true">→</span></button>
     </form>
 
     {% if setup_available %}

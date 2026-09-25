@@ -3,46 +3,45 @@
 {% block title %}Draft Versions — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 24px;">
-  <h1 style="font-size: 2rem; font-weight: 700;">Draft Version History</h1>
-  <p style="color: var(--text-secondary);">Immutable history of generated and edited prose artifacts across {{ project.title }}.</p>
-</div>
+<header class="page-head">
+  <p class="eyebrow-pill">The vault</p>
+  <h1>Draft version history</h1>
+  <p>Immutable history of generated and edited prose artifacts across {{ project.title }}.</p>
+</header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="versions" %}
 
-<div class="card" style="padding: 0; overflow: hidden;">
-  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+<div class="table-wrap">
+  <table class="data-table">
     <thead>
-      <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border-color); font-size: 0.85rem; color: var(--text-secondary);">
-        <th style="padding: 12px 16px;">Chapter</th>
-        <th style="padding: 12px 16px;">Version</th>
-        <th style="padding: 12px 16px;">Words</th>
-        <th style="padding: 12px 16px;">Model / Author</th>
-        <th style="padding: 12px 16px;">Status</th>
-        <th style="padding: 12px 16px;">Created</th>
-        <th style="padding: 12px 16px; text-align: right;">Action</th>
+      <tr>
+        <th scope="col">Chapter</th>
+        <th scope="col">Version</th>
+        <th scope="col">Words</th>
+        <th scope="col">Model / author</th>
+        <th scope="col">Status</th>
+        <th scope="col">Created</th>
+        <th scope="col" class="cell-actions">Action</th>
       </tr>
     </thead>
     <tbody>
       {% for d in drafts %}
-        <tr style="border-bottom: 1px solid var(--border-color); font-size: 0.95rem;">
-          <td style="padding: 12px 16px; font-weight: 700;">Ch {{ d.chapter.chapter_number }}</td>
-          <td style="padding: 12px 16px;">v{{ d.version_number }}</td>
-          <td style="padding: 12px 16px;">{{ d.word_count }}w</td>
-          <td style="padding: 12px 16px; color: var(--text-muted); font-size: 0.85rem;">{{ d.model_name }}</td>
-          <td style="padding: 12px 16px;">
+        <tr>
+          <td class="is-strong">Ch {{ d.chapter.chapter_number }}</td>
+          <td class="is-numeric">v{{ d.version_number }}</td>
+          <td class="is-numeric">{{ d.word_count }}w</td>
+          <td class="is-muted">{{ d.model_name }}</td>
+          <td>
             <span class="badge {% if d.status == 'accepted' %}badge-success{% else %}badge-subtle{% endif %}">{{ d.status }}</span>
           </td>
-          <td style="padding: 12px 16px; color: var(--text-muted); font-size: 0.85rem;">{{ d.created_at|date:"Y-m-d H:i" }}</td>
-          <td style="padding: 12px 16px; text-align: right;">
-            <a href="{% url 'taletomo:chapter_edit' project.id d.chapter.id %}" class="btn btn-secondary btn-sm">View in Editor</a>
+          <td class="is-muted">{{ d.created_at|date:"Y-m-d H:i" }}</td>
+          <td class="cell-actions">
+            <a href="{% url 'taletomo:chapter_edit' project.id d.chapter.id %}" class="btn btn-secondary btn-sm">View in editor</a>
           </td>
         </tr>
       {% empty %}
         <tr>
-          <td colspan="7" style="padding: 24px; text-align: center; color: var(--text-muted);">
-            No drafts generated yet.
-          </td>
+          <td colspan="7" class="table-empty">No drafts generated yet.</td>
         </tr>
       {% endfor %}
     </tbody>

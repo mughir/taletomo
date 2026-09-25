@@ -3,47 +3,42 @@
 {% block title %}Factions — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 24px;">
-  <h1 style="font-size: 2rem; font-weight: 700;">Factions & Organizations</h1>
-  <p style="color: var(--text-secondary);">Guilds, empires, secret societies, and political powers shaping the novel.</p>
-</div>
+<header class="page-head">
+  <p class="eyebrow-pill">Powers &amp; politics</p>
+  <h1>Factions &amp; organizations</h1>
+  <p>Guilds, empires, secret societies, and political powers shaping the novel.</p>
+</header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="factions" %}
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+<div class="split-grid">
   <div>
     <div class="card">
       <div class="card-header">
-        <h2>Registered Factions ({{ factions.count }})</h2>
+        <h2>Registered factions ({{ factions.count }})</h2>
       </div>
 
       {% if factions %}
-        <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="stack">
           {% for f in factions %}
-            <div style="padding: 12px; background: var(--bg-subtle); border-radius: var(--radius-md);">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 700; font-size: 1.1rem;">{{ f.name }}</span>
+            <div class="item-card">
+              <div class="item-card-head">
+                <span class="item-title">{{ f.name }}</span>
               </div>
               {% if f.ideology %}
-                <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 4px;">
-                  <strong>Ideology:</strong> {{ f.ideology }}
-                </p>
+                <p class="item-meta"><strong>Ideology:</strong> {{ f.ideology }}</p>
               {% endif %}
               {% if f.goals %}
-                <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 4px;">
-                  <strong>Goals:</strong> {{ f.goals }}
-                </p>
+                <p class="item-meta"><strong>Goals:</strong> {{ f.goals }}</p>
               {% endif %}
               {% if f.resources %}
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
-                  <strong>Resources:</strong> {{ f.resources }}
-                </p>
+                <p class="item-subtle"><strong>Resources:</strong> {{ f.resources }}</p>
               {% endif %}
             </div>
           {% endfor %}
         </div>
       {% else %}
-        <p style="color: var(--text-muted);">No factions created yet.</p>
+        <p class="text-muted">No factions created yet.</p>
       {% endif %}
     </div>
   </div>
@@ -51,26 +46,26 @@
   <div>
     <div class="card">
       <div class="card-header">
-        <h2>Add Faction</h2>
+        <h2>Add faction</h2>
       </div>
       <form method="post">
         {% csrf_token %}
         <div class="form-group">
-          <label for="id_fac_name" class="form-label">Faction Name</label>
+          <label for="id_fac_name" class="form-label">Faction name</label>
           <input type="text" id="id_fac_name" name="name" class="form-control" required placeholder="e.g. Iron Covenant">
         </div>
 
         <div class="form-group">
-          <label for="id_fac_goals" class="form-label">Strategic Goals</label>
+          <label for="id_fac_goals" class="form-label">Strategic goals</label>
           <textarea id="id_fac_goals" name="goals" class="form-control" rows="2" placeholder="What the organization seeks to achieve..."></textarea>
         </div>
 
         <div class="form-group">
-          <label for="id_fac_resources" class="form-label">Key Resources / Holdings</label>
+          <label for="id_fac_resources" class="form-label">Key resources / holdings</label>
           <input type="text" id="id_fac_resources" name="resources" class="form-control" placeholder="e.g. Floating Dreadnought, Crystal Mines">
         </div>
 
-        <button type="submit" class="btn btn-primary" style="width: 100%;">Create Faction</button>
+        <button type="submit" class="btn btn-primary btn-cta btn-block">Create faction <span class="btn-cta-chip" aria-hidden="true">→</span></button>
       </form>
     </div>
   </div>

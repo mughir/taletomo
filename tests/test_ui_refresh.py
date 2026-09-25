@@ -11,7 +11,7 @@ def test_signed_out_pages_hide_workspace_navigation(client):
     page = response.content.decode()
 
     assert response.status_code == 200
-    assert "styles.css?v=studio-20260923b" in page
+    assert "styles.css?v=studio-20260925" in page
     assert 'href="/projects/"' not in page
     assert 'href="/jobs/"' not in page
     assert 'action="/accounts/logout/"' not in page
