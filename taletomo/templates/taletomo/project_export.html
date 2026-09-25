@@ -3,35 +3,36 @@
 {% block title %}Export & Backup — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 24px;">
-  <h1 style="font-size: 2rem; font-weight: 700;">Export & Project Backup</h1>
-  <p style="color: var(--text-secondary);">Download manuscript prose or full project state backups with integrity checksums.</p>
-</div>
+<header class="page-head">
+  <p class="eyebrow-pill">Carry it with you</p>
+  <h1>Export &amp; project backup</h1>
+  <p>Download manuscript prose or full project state backups with integrity checksums.</p>
+</header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="export" %}
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+<div class="duo-grid">
   <div class="card">
     <div class="card-header">
       <h2>Manuscript Markdown (.md)</h2>
     </div>
-    <p style="color: var(--text-secondary); margin-bottom: 16px;">
+    <p class="card-lede">
       Exports all drafted and approved chapters formatted cleanly as a continuous Markdown document, suitable for external editors or web-novel distribution platforms.
     </p>
-    <a href="{% url 'taletomo:project_export_markdown' project.id %}" class="btn btn-primary">
-      Download Markdown (.md)
+    <a href="{% url 'taletomo:project_export_markdown' project.id %}" class="btn btn-primary btn-cta">
+      Download Markdown <span class="btn-cta-chip" aria-hidden="true">↓</span>
     </a>
   </div>
 
   <div class="card">
     <div class="card-header">
-      <h2>Structured JSON Backup (.json)</h2>
+      <h2>Structured JSON backup (.json)</h2>
     </div>
-    <p style="color: var(--text-secondary); margin-bottom: 16px;">
+    <p class="card-lede">
       Exports the complete project state: Bible, Spine, Volumes, Arcs, Chapters, Contracts, Drafts, Characters, Locations, Rules, Facts, and SHA-256 manifest checksums. (Zero provider secrets are included).
     </p>
-    <a href="{% url 'taletomo:project_export_json' project.id %}" class="btn btn-secondary">
-      Download JSON Backup (.json)
+    <a href="{% url 'taletomo:project_export_json' project.id %}" class="btn btn-secondary btn-cta">
+      Download JSON backup <span class="btn-cta-chip" aria-hidden="true">↓</span>
     </a>
   </div>
 </div>

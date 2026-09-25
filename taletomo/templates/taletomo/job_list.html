@@ -3,48 +3,47 @@
 {% block title %}Jobs — {{ app_name }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 24px;">
-  <h1 style="font-size: 2rem; font-weight: 700;">Generation Workflows & Jobs</h1>
-  <p style="color: var(--text-secondary);">Durable background workflows, worker leases, and execution audit history.</p>
-</div>
+<header class="page-head">
+  <p class="eyebrow-pill">Background work</p>
+  <h1>Generation workflows &amp; jobs</h1>
+  <p>Durable background workflows, worker leases, and execution audit history.</p>
+</header>
 
-<div class="card" style="padding: 0; overflow: hidden;">
-  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+<div class="table-wrap">
+  <table class="data-table">
     <thead>
-      <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border-color); font-size: 0.85rem; color: var(--text-secondary);">
-        <th style="padding: 12px 16px;">Job ID</th>
-        <th style="padding: 12px 16px;">Project</th>
-        <th style="padding: 12px 16px;">Type</th>
-        <th style="padding: 12px 16px;">Status</th>
-        <th style="padding: 12px 16px;">Progress</th>
-        <th style="padding: 12px 16px;">Confirmed Tokens</th>
-        <th style="padding: 12px 16px;">Created</th>
-        <th style="padding: 12px 16px; text-align: right;">Action</th>
+      <tr>
+        <th scope="col">Job ID</th>
+        <th scope="col">Project</th>
+        <th scope="col">Type</th>
+        <th scope="col">Status</th>
+        <th scope="col">Progress</th>
+        <th scope="col">Confirmed tokens</th>
+        <th scope="col">Created</th>
+        <th scope="col" class="cell-actions">Action</th>
       </tr>
     </thead>
     <tbody>
       {% for j in jobs %}
-        <tr style="border-bottom: 1px solid var(--border-color); font-size: 0.95rem;">
-          <td style="padding: 12px 16px; font-family: var(--font-mono); font-size: 0.85rem;">{{ j.id|stringformat:".8s" }}...</td>
-          <td style="padding: 12px 16px; font-weight: 600;">{{ j.project.title }}</td>
-          <td style="padding: 12px 16px;">{{ j.job_type }}</td>
-          <td style="padding: 12px 16px;">
+        <tr>
+          <td class="is-mono">{{ j.id|stringformat:".8s" }}...</td>
+          <td class="is-strong">{{ j.project.title }}</td>
+          <td>{{ j.job_type }}</td>
+          <td>
             <span class="badge {% if j.status == 'ready' %}badge-success{% elif j.status == 'failed' %}badge-blocker{% else %}badge-subtle{% endif %}">
               {{ j.status }}
             </span>
           </td>
-          <td style="padding: 12px 16px;">{{ j.progress_pct }}%</td>
-          <td style="padding: 12px 16px;">{{ j.confirmed_tokens }} tokens</td>
-          <td style="padding: 12px 16px; color: var(--text-muted); font-size: 0.85rem;">{{ j.created_at|date:"Y-m-d H:i" }}</td>
-          <td style="padding: 12px 16px; text-align: right;">
+          <td class="is-numeric">{{ j.progress_pct }}%</td>
+          <td class="is-numeric">{{ j.confirmed_tokens }}</td>
+          <td class="is-muted">{{ j.created_at|date:"Y-m-d H:i" }}</td>
+          <td class="cell-actions">
             <a href="{% url 'taletomo:job_detail' j.id %}" class="btn btn-secondary btn-sm">Inspect</a>
           </td>
         </tr>
       {% empty %}
         <tr>
-          <td colspan="8" style="padding: 24px; text-align: center; color: var(--text-muted);">
-            No background jobs found.
-          </td>
+          <td colspan="8" class="table-empty">No generation jobs yet.</td>
         </tr>
       {% endfor %}
     </tbody>

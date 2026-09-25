@@ -4,9 +4,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#f4f1e9">
+  <meta name="theme-color" content="#f5f2e9">
   <title>{% block title %}{{ app_name }}{% endblock %} — Writing Studio</title>
-  <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=studio-20260923b">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Outfit:wght@300..800&display=swap">
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=studio-20260925">
+  <script>document.documentElement.classList.add('js');</script>
   {% block extra_head %}{% endblock %}
 </head>
 <body class="{% if user.is_authenticated %}is-authenticated{% else %}is-public{% endif %}">
@@ -36,11 +40,32 @@
             <button type="submit" class="btn btn-quiet btn-sm">Sign out</button>
           </form>
         </div>
+
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
+          <span class="nav-toggle-blade" aria-hidden="true"></span>
+          <span class="nav-toggle-blade" aria-hidden="true"></span>
+        </button>
       {% else %}
         <p class="public-tagline">A calm place to grow a story.</p>
       {% endif %}
     </nav>
   </header>
+
+  {% if user.is_authenticated %}
+    <div class="mobile-menu" id="mobile-menu" hidden>
+      <a class="menu-link" style="--i:0" href="{% url 'taletomo:home' %}">Writing desk <small>DESK</small></a>
+      <a class="menu-link" style="--i:1" href="{% url 'taletomo:project_list' %}">My novels <small>LIBRARY</small></a>
+      <a class="menu-link" style="--i:2" href="{% url 'taletomo:job_list' %}">Draft activity <small>JOB&nbsp;LOG</small></a>
+      <a class="menu-link" style="--i:3" href="{% url 'taletomo:settings_providers' %}">AI providers <small>SETTINGS</small></a>
+      <div class="menu-foot" style="--i:4">
+        <span class="account-name">Signed in as {{ user.get_username }}</span>
+        <form action="{% url 'logout' %}" method="post" class="logout-form">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-secondary">Sign out</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
 
   <main id="main-content" class="main-container" role="main">
     {% if messages %}

@@ -3,39 +3,38 @@
 {% block title %}World Rules — {{ project.title }}{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 24px;">
-  <h1 style="font-size: 2rem; font-weight: 700;">World Rules & Invariants</h1>
-  <p style="color: var(--text-secondary);">Hard rules that cannot be violated during prose generation.</p>
-</div>
+<header class="page-head">
+  <p class="eyebrow-pill">The laws of this world</p>
+  <h1>World rules &amp; invariants</h1>
+  <p>Hard rules that cannot be violated during prose generation.</p>
+</header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="rules" %}
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+<div class="split-grid">
   <div>
     <div class="card">
       <div class="card-header">
-        <h2>Active World Rules ({{ rules.count }})</h2>
+        <h2>Active world rules ({{ rules.count }})</h2>
       </div>
 
       {% if rules %}
-        <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="stack">
           {% for r in rules %}
-            <div style="padding: 12px; background: var(--bg-subtle); border-radius: var(--radius-md);">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 700; font-size: 1.1rem;">{{ r.title }}</span>
+            <div class="item-card">
+              <div class="item-card-head">
+                <span class="item-title">{{ r.title }}</span>
                 <span class="badge badge-subtle">{{ r.get_category_display }}</span>
               </div>
-              <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 4px;">{{ r.rule_statement }}</p>
+              <p class="item-meta">{{ r.rule_statement }}</p>
               {% if r.forbidden_violations %}
-                <p style="color: var(--danger); font-size: 0.85rem; margin-top: 4px;">
-                  <strong>Forbidden Outcomes:</strong> {{ r.forbidden_violations }}
-                </p>
+                <p class="item-danger-text"><strong>Forbidden outcomes:</strong> {{ r.forbidden_violations }}</p>
               {% endif %}
             </div>
           {% endfor %}
         </div>
       {% else %}
-        <p style="color: var(--text-muted);">No specific world rules defined yet.</p>
+        <p class="text-muted">No specific world rules defined yet.</p>
       {% endif %}
     </div>
   </div>
@@ -43,12 +42,12 @@
   <div>
     <div class="card">
       <div class="card-header">
-        <h2>Register World Rule</h2>
+        <h2>Register world rule</h2>
       </div>
       <form method="post">
         {% csrf_token %}
         <div class="form-group">
-          <label for="id_rule_title" class="form-label">Rule Title</label>
+          <label for="id_rule_title" class="form-label">Rule title</label>
           <input type="text" id="id_rule_title" name="title" class="form-control" required placeholder="e.g. Equivalent Alchemical Exchange">
         </div>
 
@@ -63,17 +62,17 @@
         </div>
 
         <div class="form-group">
-          <label for="id_rule_stmt" class="form-label">Rule Statement</label>
+          <label for="id_rule_stmt" class="form-label">Rule statement</label>
           <textarea id="id_rule_stmt" name="rule_statement" class="form-control" rows="3" required placeholder="Explain how this mechanic works..."></textarea>
         </div>
 
         <div class="form-group">
-          <label for="id_rule_forbid" class="form-label">Explicit Forbidden Violations</label>
+          <label for="id_rule_forbid" class="form-label">Explicit forbidden violations</label>
           <input type="text" id="id_rule_forbid" name="forbidden_violations" class="form-control" placeholder="e.g. Soul extraction cannot be reversed">
-          <small style="color: var(--text-muted);">Continuity scanner checks drafts against this phrase.</small>
+          <small class="field-note">Continuity scanner checks drafts against this phrase.</small>
         </div>
 
-        <button type="submit" class="btn btn-primary" style="width: 100%;">Save Rule</button>
+        <button type="submit" class="btn btn-primary btn-cta btn-block">Save rule <span class="btn-cta-chip" aria-hidden="true">→</span></button>
       </form>
     </div>
   </div>

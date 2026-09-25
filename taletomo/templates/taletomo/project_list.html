@@ -5,11 +5,11 @@
 {% block content %}
 <section class="page-intro">
   <div>
-    <p class="eyebrow">THE LIBRARY</p>
+    <p class="eyebrow-pill">The library</p>
     <h1>My novels</h1>
     <p>Your worlds, outlines, and drafts—kept together as each story grows.</p>
   </div>
-  <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">＋ New novel</a>
+  <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary btn-cta">New novel <span class="btn-cta-chip" aria-hidden="true">→</span></a>
 </section>
 
 <details class="restore-panel">
@@ -29,30 +29,34 @@
   <section class="library-grid" aria-label="Novel projects">
     {% for p in projects %}
       <article class="library-card">
-        <div class="library-card-topline">
-          <span class="project-kicker">{{ p.genre }}</span>
-          <span class="badge badge-subtle">{{ p.target_chapters }} chapters</span>
-        </div>
-        <h2><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h2>
-        <p class="library-premise">{{ p.premise|truncatewords:28 }}</p>
-        <dl class="library-meta">
-          <div><dt>Tone</dt><dd>{{ p.tone }}</dd></div>
-          <div><dt>Canon revision</dt><dd>{{ p.active_branch_head }}</dd></div>
-        </dl>
-        <div class="library-card-actions">
-          <a href="{% url 'taletomo:project_overview' p.id %}" class="btn btn-secondary btn-sm">Story details</a>
-          <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-primary btn-sm">Open outline</a>
+        <div class="library-card-inner">
+          <div class="library-card-topline">
+            <span class="project-kicker">{{ p.genre }}</span>
+            <span class="badge badge-subtle">{{ p.target_chapters }} chapters</span>
+          </div>
+          <h2><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h2>
+          <p class="library-premise">{{ p.premise|truncatewords:28 }}</p>
+          <dl class="library-meta">
+            <div><dt>Tone</dt><dd>{{ p.tone }}</dd></div>
+            <div><dt>Canon revision</dt><dd>{{ p.active_branch_head }}</dd></div>
+          </dl>
+          <div class="library-card-actions">
+            <a href="{% url 'taletomo:project_overview' p.id %}" class="btn btn-secondary btn-sm">Story details</a>
+            <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-primary btn-sm btn-cta">Open outline <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+          </div>
         </div>
       </article>
     {% endfor %}
   </section>
 {% else %}
   <section class="empty-state library-empty" aria-labelledby="library-empty-title">
-    <div class="empty-state-rule" aria-hidden="true"></div>
+    <div class="gold-rule" aria-hidden="true"></div>
     <p class="eyebrow">NOTHING ON THE SHELF YET</p>
     <h2 id="library-empty-title">Every long story starts somewhere</h2>
     <p>Start with the idea you keep coming back to. You can refine the world, voice, and chapter plan as you go.</p>
-    <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">Create your first novel</a>
+    <div class="empty-state-actions">
+      <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary btn-cta">Create your first novel <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+    </div>
   </section>
 {% endif %}
 {% endblock %}

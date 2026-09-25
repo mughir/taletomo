@@ -3,30 +3,33 @@
 {% block title %}Writing Desk — {{ app_name }}{% endblock %}
 
 {% block content %}
-<section class="page-intro dashboard-intro">
-  <div>
-    <p class="eyebrow">YOUR WRITING DESK</p>
-    <h1>Welcome back, {{ request.user.get_username }}</h1>
-    <p>{{ app_tagline }}</p>
+<section class="hero-band">
+  <div class="hero-orb hero-orb-a" aria-hidden="true"></div>
+  <div class="hero-orb hero-orb-b" aria-hidden="true"></div>
+  <p class="eyebrow-pill">Your writing desk</p>
+  <h1 class="hero-title">Welcome back, <em>{{ request.user.get_username }}</em></h1>
+  <p class="hero-sub">{{ app_tagline }}</p>
+  <div class="hero-actions">
+    <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary btn-cta">Start a novel <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+    <a href="{% url 'taletomo:project_list' %}" class="text-link">Browse the library <span aria-hidden="true">→</span></a>
   </div>
-  <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">＋ Start a novel</a>
 </section>
 
 {% if not total_projects %}
   <section class="empty-state" aria-labelledby="empty-library-title">
-    <div class="empty-state-rule" aria-hidden="true"></div>
+    <div class="gold-rule" aria-hidden="true"></div>
     <p class="eyebrow">A FRESH PAGE</p>
     <h2 id="empty-library-title">Your writing desk is ready</h2>
     <p>Bring a premise, a character, or just a feeling. We’ll help you shape the story into a world you can keep building.</p>
     <div class="empty-state-actions">
-      <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary">Start your first novel</a>
+      <a href="{% url 'taletomo:project_new' %}" class="btn btn-primary btn-cta">Start your first novel <span class="btn-cta-chip" aria-hidden="true">→</span></a>
       <a href="{% url 'taletomo:settings_providers' %}" class="text-link">Set up an AI provider <span aria-hidden="true">→</span></a>
     </div>
     <p class="empty-state-note">Your ideas stay yours. Drafts remain yours to review before they become canon.</p>
   </section>
 {% else %}
-  <div class="dashboard-grid">
-    <section class="content-panel" aria-labelledby="recent-novels-heading">
+  <div class="bento">
+    <section class="card" aria-labelledby="recent-novels-heading">
       <div class="section-heading">
         <div>
           <p class="eyebrow">YOUR LIBRARY</p>
@@ -43,13 +46,13 @@
               <h3><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h3>
               {% if p.premise %}<p class="project-premise">{{ p.premise|truncatewords:24 }}</p>{% endif %}
             </div>
-            <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-secondary btn-sm">Open outline</a>
+            <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-secondary btn-sm btn-cta">Open outline <span class="btn-cta-chip" aria-hidden="true">→</span></a>
           </article>
         {% endfor %}
       </div>
     </section>
 
-    <aside class="content-panel activity-panel" aria-labelledby="activity-heading">
+    <aside class="card activity-panel" aria-labelledby="activity-heading">
       <div class="section-heading">
         <div>
           <p class="eyebrow">IN THE BACKGROUND</p>
