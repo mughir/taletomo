@@ -16,6 +16,7 @@ class StyleField(models.TextChoices):
     POV = "pov", "Point of View"
     TENSE = "tense", "Narrative Tense"
     PACING = "pacing", "Pacing"
+    PROTAGONIST = "protagonist", "Protagonist Type"
 
 
 class StyleTerm(UUIDModel):
@@ -88,6 +89,7 @@ class StyleTerm(UUIDModel):
             (StyleField.POV, project.pov),
             (StyleField.TENSE, project.tense),
             (StyleField.PACING, project.pacing),
+            (StyleField.PROTAGONIST, getattr(project, "protagonist_type", "")),
         ):
             if not raw:
                 continue

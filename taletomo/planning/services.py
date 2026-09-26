@@ -31,6 +31,7 @@ class PlanningService:
         pov: str = "Third Person Limited",
         tense: str = "Past Tense",
         pacing: str = "Balanced",
+        protagonist_type: str = "",
         length_preset: str = ProjectLengthPreset.STANDARD,
         target_words_per_chapter: int = 2200,
         content_boundaries: str = "",
@@ -65,6 +66,7 @@ class PlanningService:
             pov=pov,
             tense=tense,
             pacing=pacing,
+            protagonist_type=protagonist_type,
             target_words_per_chapter=target_words_per_chapter,
             content_boundaries=content_boundaries,
         )

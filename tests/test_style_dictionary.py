@@ -197,21 +197,29 @@ def test_project_creation_form_offers_dictionary_choices_and_accepts_values():
 
     response = client.get(reverse("taletomo:project_new"))
     content = response.content.decode()
+    # Multi axes render as chip pickers fed by a JSON term blob; single axes
+    # keep datalist suggestions.
+    assert 'id="style-terms-json"' in content
+    assert 'data-field="genre"' in content
+    assert 'data-field="tone"' in content
+    assert 'data-field="subgenre"' in content
     assert "datalist" in content
-    assert 'value="Xianxia"' in content
-    assert 'value="Slow Burn"' in content
+    assert 'value="Slow Burn"' in content  # pacing datalist
+    assert 'value="Underdog"' in content  # protagonist datalist
+    assert "Xianxia" in content  # terms blob carries genre suggestions
 
     response = client.post(
         reverse("taletomo:project_new"),
         {
             "title": "Dictionary Form Novel",
             "premise": "Created through dictionary choices",
-            "genre": "Xianxia",
-            "subgenre": "Court Intrigue",
+            "genre": "Fantasy / Xianxia",
+            "subgenre": "Court Intrigue, Progression Fantasy",
             "tone": "Grim, Mysterious",
             "pov": "First Person",
             "tense": "Present Tense",
             "pacing": "Slow Burn",
+            "protagonist_type": "Trickster",
             "target_chapters": "50",
             "length_preset": "standard",
         },
@@ -219,7 +227,32 @@ def test_project_creation_form_offers_dictionary_choices_and_accepts_values():
     )
     assert response.status_code == 200
     project = Project.objects.get(title="Dictionary Form Novel")
-    assert project.genre == "Xianxia"
-    assert project.subgenre == "Court Intrigue"
+    assert project.genre == "Fantasy / Xianxia"
+    assert project.subgenre == "Court Intrigue, Progression Fantasy"
     assert project.pacing == "Slow Burn"
     assert project.tense == "Present Tense"
+    assert project.protagonist_type == "Trickster"
+
+
+@pytest.mark.django_db
+def test_protagonist_axis_is_seeded_resolved_and_injected_into_prompts():
+    user = User.objects.create_user(username="protagonist_author")
+    project = PlanningService.create_project_with_scaffold(
+        owner=user,
+        title="Trickster Chronicle",
+        premise="Protagonist axis fixture",
+        protagonist_type="Trickster",
+    )
+    chapter = project.chapters.get(chapter_number=1)
+
+    resolved = {term.name: term for term in StyleTerm.resolve_for_project(project)}
+    assert "Trickster" in resolved
+    assert resolved["Trickster"].field == StyleField.PROTAGONIST
+
+    package = ContextAssembler.assemble_chapter_context(chapter)
+    assert "Protagonist Type — Trickster" in package.user_prompt
+    assert "plans nested inside plans" in package.user_prompt  # example text
+    style_entry = next(
+        e for e in package.manifest.source_entries if e["id"] == "style-dictionary"
+    )
+    assert style_entry["category"] == "constraints"

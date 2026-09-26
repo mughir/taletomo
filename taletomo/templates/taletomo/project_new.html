@@ -12,6 +12,7 @@
 </section>
 
 <div class="form-layout">
+  {{ style_terms_json|json_script:"style-terms-json" }}
   <form method="post" class="form-card" aria-label="Create a novel">
     {% csrf_token %}
 
@@ -35,26 +36,35 @@
       <div class="field-pair">
         <div class="form-group">
           <label for="id_genre" class="form-label">Genre or mix of genres</label>
-          <input type="text" id="id_genre" name="genre" class="form-control" value="Fantasy / Xianxia / LitRPG" list="genre-datalist" autocomplete="off">
-          <datalist id="genre-datalist">
-            {% for t in genre_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
-          </datalist>
+          <div class="style-picker"
+               data-field="genre"
+               data-hidden-name="genre"
+               data-separator=" / "
+               data-initial="Fantasy / Xianxia / LitRPG"
+               data-label="Genre"
+               data-placeholder="Pick or type genres…"></div>
         </div>
         <div class="form-group">
           <label for="id_tone" class="form-label">Mood and tone</label>
-          <input type="text" id="id_tone" name="tone" class="form-control" value="Epic, Mysterious, Strategic" list="tone-datalist" autocomplete="off">
-          <datalist id="tone-datalist">
-            {% for t in tone_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
-          </datalist>
+          <div class="style-picker"
+               data-field="tone"
+               data-hidden-name="tone"
+               data-separator=", "
+               data-initial="Epic, Mysterious, Strategic"
+               data-label="Tone"
+               data-placeholder="Pick or type tones…"></div>
         </div>
       </div>
       <div class="field-pair">
         <div class="form-group">
-          <label for="id_subgenre" class="form-label">Subgenre <small class="field-note-inline">(optional)</small></label>
-          <input type="text" id="id_subgenre" name="subgenre" class="form-control" placeholder="e.g. Court Intrigue, Progression Fantasy" list="subgenre-datalist" autocomplete="off">
-          <datalist id="subgenre-datalist">
-            {% for t in subgenre_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
-          </datalist>
+          <label class="form-label">Subgenre <small class="field-note-inline">(optional, can mix)</small></label>
+          <div class="style-picker"
+               data-field="subgenre"
+               data-hidden-name="subgenre"
+               data-separator=", "
+               data-initial=""
+               data-label="Subgenre"
+               data-placeholder="Pick or type subgenres…"></div>
         </div>
         <div class="form-group">
           <label for="id_pacing" class="form-label">Pacing</label>
@@ -64,7 +74,7 @@
           </datalist>
         </div>
       </div>
-      <small class="field-note">Suggestions come from the <a href="{% url 'taletomo:style_dictionary' %}">style dictionary</a> — each term carries a definition and example that guide generation. You can also type your own, or add new terms to the dictionary.</small>
+      <small class="field-note">Suggestions come from the <a href="{% url 'taletomo:style_dictionary' %}">style dictionary</a> — each term carries a definition and example that guide generation. Click terms to combine several, or type your own and press Enter. Add new terms to the dictionary any time.</small>
     </section>
 
     <section class="form-section" aria-labelledby="story-shape-heading">
@@ -122,6 +132,16 @@
           <datalist id="tense-datalist">
             {% for t in tense_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
           </datalist>
+        </div>
+      </div>
+      <div class="field-pair">
+        <div class="form-group">
+          <label for="id_protagonist_type" class="form-label">Protagonist type</label>
+          <input type="text" id="id_protagonist_type" name="protagonist_type" class="form-control" placeholder="e.g. Underdog, Anti-hero, Trickster" list="protagonist-datalist" autocomplete="off">
+          <datalist id="protagonist-datalist">
+            {% for t in protagonist_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
+          </datalist>
+          <small class="field-note">The archetype your lead starts as — its definition and example steer every chapter.</small>
         </div>
       </div>
     </section>
