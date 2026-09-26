@@ -8,11 +8,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.views import LoginView
 from django.core.paginator import Paginator
-from django.db import connection, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Max
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods, require_POST
 from taletomo.canon.models import (
     CanonFact,
@@ -21,11 +22,15 @@ from taletomo.canon.models import (
     Faction,
     Location,
     PlotThread,
+    ProposedCanonItem,
     StoryEvent,
     TimelineEvent,
+    TruthScope,
     WorldRule,
 )
+from taletomo.canon.extraction import CanonExtractionError, CanonExtractionService
 from taletomo.canon.services import CanonService, StaleHeadError
+from taletomo.consistency.checker import ContinuityChecker
 from taletomo.consistency.models import ContinuityFinding, FindingSeverity, FindingStatus
 from taletomo.exporting.services import ExportService
 from taletomo.generation.models import DraftArtifact, DraftStatus, GenerationJob, JobStatus
@@ -45,8 +50,22 @@ from taletomo.planning.services import PlanningService
 from taletomo.providers.adapters import ProviderGateway
 from taletomo.providers.models import BudgetReservation, ProviderConfig, ProviderType
 from taletomo.providers.security import SSRFSecurityError, validate_endpoint_url
+from taletomo.taxonomy.models import StyleField, StyleTerm
 
 User = get_user_model()
+
+
+def _style_term_lists(user):
+    """Dictionary terms grouped per style axis, for the creation form datalists."""
+    terms = StyleTerm.visible_to(user)
+    return {
+        "genre_terms": terms.filter(field=StyleField.GENRE),
+        "subgenre_terms": terms.filter(field=StyleField.SUBGENRE),
+        "tone_terms": terms.filter(field=StyleField.TONE),
+        "pov_terms": terms.filter(field=StyleField.POV),
+        "tense_terms": terms.filter(field=StyleField.TENSE),
+        "pacing_terms": terms.filter(field=StyleField.PACING),
+    }
 
 
 class TaleTomoLoginView(LoginView):
@@ -116,13 +135,19 @@ def project_new(request):
             target_chapters = None
         if target_chapters is None or not 1 <= target_chapters <= 4000:
             messages.error(request, "Target chapter count must be between 1 and 4,000.")
-            return render(request, "taletomo/project_new.html", {"presets": ProjectLengthPreset.choices})
+            return render(
+                request,
+                "taletomo/project_new.html",
+                {"presets": ProjectLengthPreset.choices, **_style_term_lists(request.user)},
+            )
 
         length_preset = request.POST.get("length_preset", ProjectLengthPreset.STANDARD)
-        genre = request.POST.get("genre", "Fantasy")
-        tone = request.POST.get("tone", "Epic, Mysterious")
-        pov = request.POST.get("pov", "Third Person Limited")
-        tense = request.POST.get("tense", "Past Tense")
+        genre = request.POST.get("genre", "Fantasy").strip() or "Fantasy"
+        subgenre = request.POST.get("subgenre", "").strip()
+        tone = request.POST.get("tone", "Epic, Mysterious").strip() or "Epic, Mysterious"
+        pov = request.POST.get("pov", "Third Person Limited").strip() or "Third Person Limited"
+        tense = request.POST.get("tense", "Past Tense").strip() or "Past Tense"
+        pacing = request.POST.get("pacing", "Balanced").strip() or "Balanced"
 
         words_map = {
             ProjectLengthPreset.SHORT: 1200,
@@ -137,7 +162,11 @@ def project_new(request):
                 target_words = None
             if target_words is None or not 500 <= target_words <= 10000:
                 messages.error(request, "Custom chapter length must be between 500 and 10,000 words.")
-                return render(request, "taletomo/project_new.html", {"presets": ProjectLengthPreset.choices})
+                return render(
+                    request,
+                    "taletomo/project_new.html",
+                    {"presets": ProjectLengthPreset.choices, **_style_term_lists(request.user)},
+                )
         else:
             target_words = words_map.get(length_preset, 2200)
 
@@ -147,9 +176,11 @@ def project_new(request):
             premise=premise,
             target_chapters=target_chapters,
             genre=genre,
+            subgenre=subgenre,
             tone=tone,
             pov=pov,
             tense=tense,
+            pacing=pacing,
             length_preset=length_preset,
             target_words_per_chapter=target_words,
         )
@@ -157,7 +188,64 @@ def project_new(request):
         messages.success(request, f"Project '{project.title}' initialized successfully!")
         return redirect("taletomo:project_overview", project_id=project.id)
 
-    return render(request, "taletomo/project_new.html", {"presets": ProjectLengthPreset.choices})
+    return render(
+        request,
+        "taletomo/project_new.html",
+        {"presets": ProjectLengthPreset.choices, **_style_term_lists(request.user)},
+    )
+
+
+@login_required
+def style_dictionary(request):
+    """Browse, add, and remove style-dictionary terms (definitions + examples)."""
+    if request.method == "POST":
+        action = request.POST.get("action", "add")
+        if action == "delete":
+            try:
+                term = StyleTerm.objects.get(id=uuid.UUID(str(request.POST.get("term_id", ""))), created_by=request.user)
+                name = term.name
+                term.delete()
+                messages.success(request, f"Removed '{name}' from the style dictionary.")
+            except (StyleTerm.DoesNotExist, ValueError):
+                messages.error(request, "Only terms you added yourself can be removed.")
+            return redirect("taletomo:style_dictionary")
+
+        field = request.POST.get("field", StyleField.GENRE)
+        if field not in StyleField.values:
+            field = StyleField.GENRE
+        name = request.POST.get("name", "").strip()
+        definition = request.POST.get("definition", "").strip()
+        example = request.POST.get("example", "").strip()
+        if not name or not definition:
+            messages.error(request, "A dictionary term needs at least a name and a definition.")
+            return redirect("taletomo:style_dictionary")
+        if StyleTerm.objects.filter(field=field, slug=slugify(name)[:120]).exists():
+            messages.error(request, f"'{name}' already exists in {StyleField(field).label}. Pick it from the suggestions instead.")
+            return redirect("taletomo:style_dictionary")
+        StyleTerm.objects.create(
+            field=field,
+            name=name[:100],
+            definition=definition,
+            example=example,
+            created_by=request.user,
+        )
+        messages.success(
+            request,
+            f"'{name}' added. Its definition and example will now guide chapter generation.",
+        )
+        return redirect("taletomo:style_dictionary")
+
+    visible = StyleTerm.visible_to(request.user)
+    by_field = {}
+    for term in visible:
+        by_field.setdefault(term.field, []).append(term)
+    groups = [(field_value, label, by_field.get(field_value, [])) for field_value, label in StyleField.choices]
+
+    return render(
+        request,
+        "taletomo/settings_style_dictionary.html",
+        {"groups": groups, "fields": StyleField.choices},
+    )
 
 
 @login_required
@@ -464,6 +552,9 @@ def chapter_edit(request, project_id, chapter_id):
 
     findings = chapter.continuity_findings.all().order_by("-severity")
     blockers_count = findings.filter(severity=FindingSeverity.BLOCKER, status=FindingStatus.OPEN).count()
+    pending_canon_count = chapter.proposed_canon_items.filter(
+        status=ProposedCanonItem.Status.PROPOSED
+    ).count()
 
     if request.method == "POST":
         if chapter.status == Chapter.Status.LOCKED:
@@ -488,6 +579,13 @@ def chapter_edit(request, project_id, chapter_id):
             chapter.save(update_fields=["active_draft_id", "current_word_count", "status"])
         else:
             chapter.save(update_fields=["active_draft_id", "current_word_count"])
+
+        # Manual edits bypass the generation pipeline, so run the free
+        # deterministic checks on every saved version.
+        ContinuityChecker.check_and_persist(
+            chapter=chapter, prose=new_prose, draft_id=str(new_v.id)
+        )
+
         messages.success(request, f"New version {new_v.version_number} saved.")
         return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
 
@@ -502,6 +600,7 @@ def chapter_edit(request, project_id, chapter_id):
         "diff_html": diff_html,
         "findings": findings,
         "blockers_count": blockers_count,
+        "pending_canon_count": pending_canon_count,
         "characters": project.characters.all()[:8],
         "rules": project.rules.all()[:6],
     }
@@ -521,30 +620,52 @@ def chapter_generate(request, project_id, chapter_id):
 
     next_version = (chapter.drafts.aggregate(max_v=Max("version_number"))["max_v"] or 0) + 1
     idempotency_key = f"draft-{chapter.id}-v{next_version}"
+    active_statuses = [
+        JobStatus.QUEUED,
+        JobStatus.PREPARING_CONTEXT,
+        JobStatus.SUBMITTED,
+        JobStatus.GENERATING,
+        JobStatus.CHECKING,
+        JobStatus.EXTRACTING,
+    ]
 
     # Reuse existing active job if already queued or generating
     active_job = GenerationJob.objects.filter(
         idempotency_key=idempotency_key,
-        status__in=[
-            JobStatus.QUEUED,
-            JobStatus.PREPARING_CONTEXT,
-            JobStatus.SUBMITTED,
-            JobStatus.GENERATING,
-            JobStatus.CHECKING,
-        ],
+        status__in=active_statuses,
     ).first()
     if active_job:
         messages.info(request, f"Generation job is already running for Chapter {chapter.chapter_number}.")
         return redirect("taletomo:job_detail", job_id=active_job.id)
 
-    job = GenerationJob.objects.create(
-        project=project,
-        user=request.user,
-        job_type="chapter_draft",
-        idempotency_key=idempotency_key,
-        target_chapter_id=chapter.id,
-        stage="Queued for generation",
-    )
+    try:
+        job = GenerationJob.objects.create(
+            project=project,
+            user=request.user,
+            job_type="chapter_draft",
+            idempotency_key=idempotency_key,
+            target_chapter_id=chapter.id,
+            stage="Queued for generation",
+        )
+    except IntegrityError:
+        # Two concurrent submissions raced past the active-job check; the
+        # unique idempotency key means one job already exists.
+        active_job = GenerationJob.objects.filter(
+            idempotency_key=idempotency_key, status__in=active_statuses
+        ).first()
+        if active_job:
+            messages.info(request, f"Generation job is already running for Chapter {chapter.chapter_number}.")
+            return redirect("taletomo:job_detail", job_id=active_job.id)
+        # A terminal job already claimed this key (drafts were removed since);
+        # disambiguate so the request still starts exactly one new job.
+        job = GenerationJob.objects.create(
+            project=project,
+            user=request.user,
+            job_type="chapter_draft",
+            idempotency_key=f"{idempotency_key}-{uuid.uuid4().hex[:8]}",
+            target_chapter_id=chapter.id,
+            stage="Queued for generation",
+        )
 
     # Launch Celery task on commit
     transaction.on_commit(lambda: generate_chapter_task.delay(str(job.id)))
@@ -602,6 +723,34 @@ def chapter_commit_canon(request, project_id, chapter_id):
             "payload": {"chapter_number": chapter.chapter_number},
         }
     ]
+    facts = []
+    thread_updates = []
+    character_updates = []
+    approved_items = list(
+        chapter.proposed_canon_items.filter(status=ProposedCanonItem.Status.APPROVED)
+    )
+    for item in approved_items:
+        payload = item.payload or {}
+        if item.kind == ProposedCanonItem.Kind.FACT:
+            facts.append(
+                {
+                    "subject": payload.get("subject", ""),
+                    "predicate": payload.get("predicate", ""),
+                    "value": payload.get("value", ""),
+                    "scope": payload.get("scope", TruthScope.WORLD_TRUTH),
+                }
+            )
+        elif item.kind == ProposedCanonItem.Kind.EVENT:
+            events.append(
+                {
+                    "event_type": payload.get("event_type", "plot_progress"),
+                    "summary": payload.get("summary", ""),
+                }
+            )
+        elif item.kind == ProposedCanonItem.Kind.THREAD_UPDATE:
+            thread_updates.append(payload)
+        elif item.kind == ProposedCanonItem.Kind.CHARACTER_UPDATE:
+            character_updates.append(payload)
 
     try:
         snapshot = CanonService.commit_chapter_canon(
@@ -609,17 +758,26 @@ def chapter_commit_canon(request, project_id, chapter_id):
             chapter=chapter,
             expected_head=expected_head,
             events=events,
-            facts=[],
+            facts=facts,
             actor=request.user,
             override_blockers=override_blockers,
             override_rationale=override_rationale,
+            thread_updates=thread_updates,
+            character_updates=character_updates,
         )
         chapter.current_summary = summary_text
         chapter.save(update_fields=["current_summary"])
+        if approved_items:
+            ProposedCanonItem.objects.filter(id__in=[item.id for item in approved_items]).update(
+                status=ProposedCanonItem.Status.CONSUMED
+            )
 
         messages.success(
             request,
-            f"Atomic canon commit successful! Advanced to {project.active_branch_head}. Chapter {chapter.chapter_number} is locked.",
+            f"Atomic canon commit successful! Advanced to {project.active_branch_head}. "
+            f"Chapter {chapter.chapter_number} is locked "
+            f"({len(facts)} facts, {len(events)} events, {len(thread_updates)} thread updates, "
+            f"{len(character_updates)} character updates).",
         )
     except StaleHeadError as e:
         messages.error(request, f"Commit rejected due to stale branch head: {e}")
@@ -627,6 +785,95 @@ def chapter_commit_canon(request, project_id, chapter_id):
         messages.error(request, f"Commit rejected by domain policy: {e}")
 
     return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
+
+
+@login_required
+def chapter_canon_review(request, project_id, chapter_id):
+    """Human-in-the-loop review of canon proposals extracted from the active draft."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    items = chapter.proposed_canon_items.select_related("draft").order_by("kind", "-confidence", "created_at")
+    pending_items = items.filter(status=ProposedCanonItem.Status.PROPOSED)
+    reviewed_items = items.exclude(status=ProposedCanonItem.Status.PROPOSED)
+
+    context = {
+        "project": project,
+        "chapter": chapter,
+        "pending_items": pending_items,
+        "reviewed_items": reviewed_items,
+        "is_locked": chapter.status == Chapter.Status.LOCKED,
+    }
+    return render(request, "taletomo/chapter_canon_review.html", context)
+
+
+@login_required
+@require_POST
+def proposed_canon_update(request, item_id):
+    item = get_object_or_404(ProposedCanonItem, id=item_id, project__owner=request.user)
+    action = request.POST.get("action", "")
+    review_note = request.POST.get("review_note", "").strip()
+
+    redirect_target = redirect(
+        "taletomo:chapter_canon_review",
+        project_id=item.project.id,
+        chapter_id=item.chapter.id,
+    )
+
+    if item.chapter.status == Chapter.Status.LOCKED:
+        messages.error(request, "Chapter is locked; proposals can no longer be reviewed.")
+        return redirect_target
+    if item.status != ProposedCanonItem.Status.PROPOSED:
+        messages.error(request, "This proposal has already been reviewed.")
+        return redirect_target
+    if action not in ("approve", "reject"):
+        messages.error(request, "Unknown review action.")
+        return redirect_target
+
+    item.status = (
+        ProposedCanonItem.Status.APPROVED
+        if action == "approve"
+        else ProposedCanonItem.Status.REJECTED
+    )
+    if review_note:
+        item.review_note = review_note
+    item.save(update_fields=["status", "review_note", "updated_at"])
+    messages.success(request, f"Proposal {item.get_status_display().lower()}.")
+    return redirect_target
+
+
+@login_required
+@require_POST
+def chapter_extract_canon(request, project_id, chapter_id):
+    """Runs canon extraction on the active draft (e.g. after manual edits)."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    redirect_target = redirect(
+        "taletomo:chapter_canon_review", project_id=project.id, chapter_id=chapter.id
+    )
+    if chapter.status == Chapter.Status.LOCKED:
+        messages.error(request, "Chapter is locked; committed canon is immutable.")
+        return redirect_target
+    if not chapter.active_draft_id:
+        messages.error(request, "No active draft to extract canon from.")
+        return redirect_target
+
+    draft = get_object_or_404(DraftArtifact, id=chapter.active_draft_id, chapter=chapter)
+    try:
+        adapter = ProviderGateway.get_adapter(user=request.user, project=project)
+        proposals = CanonExtractionService.extract_from_draft(
+            chapter=chapter, draft=draft, adapter=adapter
+        )
+        messages.success(request, f"Extracted {len(proposals)} canon proposals for review.")
+    except CanonExtractionError as e:
+        messages.error(request, f"Canon extraction failed: {e}")
+    except Exception:
+        messages.error(
+            request,
+            "Canon extraction failed: the provider could not be reached. Check your provider settings.",
+        )
+    return redirect_target
 
 
 @login_required

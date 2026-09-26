@@ -35,13 +35,36 @@
       <div class="field-pair">
         <div class="form-group">
           <label for="id_genre" class="form-label">Genre or mix of genres</label>
-          <input type="text" id="id_genre" name="genre" class="form-control" value="Fantasy / Xianxia / LitRPG">
+          <input type="text" id="id_genre" name="genre" class="form-control" value="Fantasy / Xianxia / LitRPG" list="genre-datalist" autocomplete="off">
+          <datalist id="genre-datalist">
+            {% for t in genre_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
+          </datalist>
         </div>
         <div class="form-group">
           <label for="id_tone" class="form-label">Mood and tone</label>
-          <input type="text" id="id_tone" name="tone" class="form-control" value="Epic, Mysterious, Strategic">
+          <input type="text" id="id_tone" name="tone" class="form-control" value="Epic, Mysterious, Strategic" list="tone-datalist" autocomplete="off">
+          <datalist id="tone-datalist">
+            {% for t in tone_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
+          </datalist>
         </div>
       </div>
+      <div class="field-pair">
+        <div class="form-group">
+          <label for="id_subgenre" class="form-label">Subgenre <small class="field-note-inline">(optional)</small></label>
+          <input type="text" id="id_subgenre" name="subgenre" class="form-control" placeholder="e.g. Court Intrigue, Progression Fantasy" list="subgenre-datalist" autocomplete="off">
+          <datalist id="subgenre-datalist">
+            {% for t in subgenre_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label for="id_pacing" class="form-label">Pacing</label>
+          <input type="text" id="id_pacing" name="pacing" class="form-control" value="Balanced" list="pacing-datalist" autocomplete="off">
+          <datalist id="pacing-datalist">
+            {% for t in pacing_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
+          </datalist>
+        </div>
+      </div>
+      <small class="field-note">Suggestions come from the <a href="{% url 'taletomo:style_dictionary' %}">style dictionary</a> — each term carries a definition and example that guide generation. You can also type your own, or add new terms to the dictionary.</small>
     </section>
 
     <section class="form-section" aria-labelledby="story-shape-heading">
@@ -88,18 +111,17 @@
       <div class="field-pair">
         <div class="form-group">
           <label for="id_pov" class="form-label">Point of view</label>
-          <select id="id_pov" name="pov" class="form-control">
-            <option value="Third Person Limited" selected>Third-person limited</option>
-            <option value="First Person">First person</option>
-            <option value="Third Person Omniscient">Third-person omniscient</option>
-          </select>
+          <input type="text" id="id_pov" name="pov" class="form-control" value="Third Person Limited" list="pov-datalist" autocomplete="off">
+          <datalist id="pov-datalist">
+            {% for t in pov_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
+          </datalist>
         </div>
         <div class="form-group">
           <label for="id_tense" class="form-label">Narrative tense</label>
-          <select id="id_tense" name="tense" class="form-control">
-            <option value="Past Tense" selected>Past tense</option>
-            <option value="Present Tense">Present tense</option>
-          </select>
+          <input type="text" id="id_tense" name="tense" class="form-control" value="Past Tense" list="tense-datalist" autocomplete="off">
+          <datalist id="tense-datalist">
+            {% for t in tense_terms %}<option value="{{ t.name }}">{{ t.definition|truncatechars:90 }}</option>{% endfor %}
+          </datalist>
         </div>
       </div>
     </section>

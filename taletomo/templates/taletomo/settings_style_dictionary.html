@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Style Dictionary — {{ app_name }}{% endblock %}
+
+{% block content %}
+<header class="page-head-row">
+  <div class="page-head">
+    <p class="eyebrow-pill">Shared vocabulary</p>
+    <h1>Style dictionary</h1>
+    <p>Every term here carries a definition and an example. When a project's genre, tone, or voice matches a term, its meaning rides into every generation prompt — so the model writes Xianxia or Grimdark the way you mean it.</p>
+  </div>
+  <div class="page-actions">
+    <a href="{% url 'taletomo:project_new' %}" class="btn btn-secondary">Start a novel</a>
+  </div>
+</header>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Add a term</h2>
+  </div>
+  <form method="post" class="finding-actions" aria-label="Add a dictionary term">
+    {% csrf_token %}
+    <select name="field" class="form-control" aria-label="Style axis">
+      {% for value, label in fields %}
+        <option value="{{ value }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="name" class="form-control" placeholder="Term name (e.g. Weird Western)" required maxlength="100">
+    <input type="text" name="definition" class="form-control" placeholder="Definition — what does this term mean for the writing?" required>
+    <input type="text" name="example" class="form-control" placeholder="Example — a line or a feel the model should aim for (optional)">
+    <button type="submit" class="btn btn-primary">Add term</button>
+  </form>
+</div>
+
+{% for field_value, label, terms in groups %}
+  <div class="card">
+    <div class="card-header">
+      <h2>{{ label }} <span class="version-count">{{ terms|length }}</span></h2>
+    </div>
+    {% if terms %}
+      <div class="stack">
+        {% for t in terms %}
+          <div class="item-card">
+            <div class="item-card-head">
+              <div>
+                <strong class="item-title">{{ t.name }}</strong>
+                {% if t.is_builtin %}
+                  <span class="badge badge-subtle">Built-in</span>
+                {% else %}
+                  <span class="badge badge-ok">Yours</span>
+                {% endif %}
+              </div>
+              {% if not t.is_builtin %}
+                <form method="post" action="{% url 'taletomo:style_dictionary' %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="term_id" value="{{ t.id }}">
+                  <button type="submit" class="btn btn-quiet btn-sm">Remove</button>
+                </form>
+              {% endif %}
+            </div>
+            <p class="item-meta"><strong>Definition:</strong> {{ t.definition }}</p>
+            {% if t.example %}<p class="item-suggest"><strong>Example:</strong> {{ t.example }}</p>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="item-subtle">No terms yet for this axis.</p>
+    {% endif %}
+  </div>
+{% endfor %}
+{% endblock %}

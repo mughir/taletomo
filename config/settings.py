@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # TaleTomo Apps
     "taletomo.core.apps.CoreConfig",
+    "taletomo.taxonomy.apps.TaxonomyConfig",
     "taletomo.providers.apps.ProvidersConfig",
     "taletomo.planning.apps.PlanningConfig",
     "taletomo.canon.apps.CanonConfig",
@@ -133,6 +134,10 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_ALWAYS_EAGER", "False").lower() in ("true", "1", "yes")
 CELERY_TASK_EAGER_PROPAGATES = True
+
+# Stale-job reaper: QUEUED jobs untouched for this long are assumed to have
+# lost their broker dispatch and are re-queued by the periodic reaper.
+TALETOMO_REAPER_QUEUED_GRACE_SECONDS = int(os.environ.get("TALETOMO_REAPER_QUEUED_GRACE_SECONDS", "900"))
 
 # Encryption key for secrets at rest (Fernet compatible base64 32-byte key)
 # If not provided, derive deterministic dev key

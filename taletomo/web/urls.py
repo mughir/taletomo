@@ -23,6 +23,9 @@ urlpatterns = [
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/approve-draft/", views.chapter_approve_draft, name="chapter_approve_draft"),
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/commit-canon/", views.chapter_commit_canon, name="chapter_commit_canon"),
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/continuity/", views.chapter_continuity, name="chapter_continuity"),
+    path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/canon/", views.chapter_canon_review, name="chapter_canon_review"),
+    path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/extract-canon/", views.chapter_extract_canon, name="chapter_extract_canon"),
+    path("canon-proposals/<uuid:item_id>/update/", views.proposed_canon_update, name="proposed_canon_update"),
     path("findings/<uuid:finding_id>/update/", views.finding_update, name="finding_update"),
     path("projects/<uuid:project_id>/versions/", views.project_versions, name="project_versions"),
     path("projects/<uuid:project_id>/compare/<uuid:left_id>/<uuid:right_id>/", views.compare_drafts, name="compare_drafts"),
@@ -37,4 +40,5 @@ urlpatterns = [
     path("jobs/<uuid:job_id>/retry/", views.job_retry, name="job_retry"),
     path("settings/providers/", views.settings_providers, name="settings_providers"),
     path("settings/providers/test/", views.test_provider, name="test_provider"),
+    path("settings/dictionary/", views.style_dictionary, name="style_dictionary"),
 ]

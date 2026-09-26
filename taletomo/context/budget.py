@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Dict
+import math
 
 
 @dataclass
@@ -15,6 +16,22 @@ class TokenBudget:
 class BudgetCalculator:
     SAFETY_MARGIN_DEFAULT = 1000
     PROVIDER_OVERHEAD_DEFAULT = 500
+    MIN_OUTPUT_TOKENS = 1000
+    DEFAULT_MAX_OUTPUT_TOKENS = 16000
+    # English prose averages roughly 0.67 words per token; size the output
+    # window from the chapter's word target so long chapters are not truncated
+    # and short ones do not over-reserve.
+    TOKENS_PER_WORD = 1.5
+
+    @classmethod
+    def estimate_output_tokens(
+        cls,
+        target_words: int,
+        max_output: int = None,
+    ) -> int:
+        cap = int(max_output) if max_output else cls.DEFAULT_MAX_OUTPUT_TOKENS
+        estimated = int(math.ceil(max(0, target_words) * cls.TOKENS_PER_WORD))
+        return max(cls.MIN_OUTPUT_TOKENS, min(estimated, cap))
 
     @classmethod
     def calculate_budget(

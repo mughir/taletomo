@@ -137,6 +137,11 @@
             <div class="approval-step-copy">
               <strong>Commit story facts</strong>
               <small>Add a short summary and lock this chapter into canon.</small>
+              <small>
+                <a href="{% url 'taletomo:chapter_canon_review' project.id chapter.id %}">
+                  Canon review{% if pending_canon_count %} — {{ pending_canon_count }} proposal{{ pending_canon_count|pluralize }} awaiting your call{% endif %} <span aria-hidden="true">→</span>
+                </a>
+              </small>
             </div>
             {% if chapter.status == 'approved' and active_draft %}
               <form method="post" action="{% url 'taletomo:chapter_commit_canon' project.id chapter.id %}" class="canon-commit-form">

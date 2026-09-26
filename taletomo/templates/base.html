@@ -32,6 +32,7 @@
           <li><a class="nav-item{% if request.resolver_match.url_name == 'project_list' or request.resolver_match.url_name == 'project_new' or request.resolver_match.url_name == 'project_overview' or request.resolver_match.url_name == 'project_outline' or request.resolver_match.url_name == 'chapter_edit' %} is-current{% endif %}" href="{% url 'taletomo:project_list' %}">My novels</a></li>
           <li><a class="nav-item{% if request.resolver_match.url_name == 'job_list' or request.resolver_match.url_name == 'job_detail' %} is-current{% endif %}" href="{% url 'taletomo:job_list' %}">Draft activity</a></li>
           <li><a class="nav-item{% if request.resolver_match.url_name == 'settings_providers' %} is-current{% endif %}" href="{% url 'taletomo:settings_providers' %}">AI providers</a></li>
+          <li><a class="nav-item{% if request.resolver_match.url_name == 'style_dictionary' %} is-current{% endif %}" href="{% url 'taletomo:style_dictionary' %}">Style dictionary</a></li>
         </ul>
         <div class="account-controls">
           <span class="account-name">{{ user.get_username }}</span>
@@ -57,7 +58,8 @@
       <a class="menu-link" style="--i:1" href="{% url 'taletomo:project_list' %}">My novels <small>LIBRARY</small></a>
       <a class="menu-link" style="--i:2" href="{% url 'taletomo:job_list' %}">Draft activity <small>JOB&nbsp;LOG</small></a>
       <a class="menu-link" style="--i:3" href="{% url 'taletomo:settings_providers' %}">AI providers <small>SETTINGS</small></a>
-      <div class="menu-foot" style="--i:4">
+      <a class="menu-link" style="--i:4" href="{% url 'taletomo:style_dictionary' %}">Style dictionary <small>DICT</small></a>
+      <div class="menu-foot" style="--i:5">
         <span class="account-name">Signed in as {{ user.get_username }}</span>
         <form action="{% url 'logout' %}" method="post" class="logout-form">
           {% csrf_token %}

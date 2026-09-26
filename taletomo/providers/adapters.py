@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 import httpx
@@ -100,9 +101,74 @@ class FakeProviderAdapter(BaseProviderAdapter):
                     model=selected_model,
                 )
 
-        # Context-aware mock responses
         prompt_lower = prompt.lower()
-        if "bible" in prompt_lower or "premise" in prompt_lower:
+
+        # Explicit task markers take absolute precedence over legacy keyword
+        # routing: pipeline prompts embed them so incidental words (e.g.
+        # "continuity requirements" in a drafting prompt) cannot hijack the
+        # response to the wrong scripted branch.
+        if "task: extract_canon" in prompt_lower:
+            content = json.dumps(
+                {
+                    "events": [
+                        {"summary": "Alaric escaped the city guard raid through the aqueduct.", "event_type": "plot_progress"}
+                    ],
+                    "claims": [
+                        {"subject": "Alaric", "predicate": "current_location", "value": "Old Aqueduct", "scope": "world_truth"},
+                        {"subject": "Captain Vance", "predicate": "investigating", "value": "Alaric's Laboratory", "scope": "world_truth"}
+                    ],
+                    "threads_updated": [
+                        {"thread_title": "City Guard Investigation", "operation": "advance", "note": "Vance discovered the lab"}
+                    ],
+                    "character_updates": [
+                        {
+                            "name": "Alaric",
+                            "field": "wounds_status",
+                            "value": "Left wrist shattered and freshly bandaged",
+                            "note": "Prose: his shattered left wrist throbbing in the damp cold",
+                        },
+                        {"name": "Stranger Unknown", "field": "is_alive", "value": "dead"},
+                    ],
+                }
+            )
+        elif "task: critique_continuity" in prompt_lower:
+            findings = []
+            if self.simulate_contradiction:
+                findings.append(
+                    {
+                        "category": "injury",
+                        "severity": "blocker",
+                        "claim": "Protagonist climbed with both hands fully intact.",
+                        "conflicting_evidence": ["Fact #42: Alaric's left hand remains shattered and bandaged."],
+                        "source_references": ["Chapter 1, Scene 2"],
+                        "suggested_action": "Revise prose to depict one-handed climbing or assistance.",
+                    }
+                )
+            content = json.dumps(findings)
+        elif "task: draft_chapter" in prompt_lower:
+            content = (
+                "The rain pounded against the leaded glass of Alaric's study, streaking the dark panorama of the Grand Dominion. "
+                "Beneath the flickering gaslamp, the vial of azure tincture glowed with an unsettling luminescence.\n\n"
+                "Footsteps echoed on the cobblestones outside—rhythmic, heavy, and far too hurried for a midnight patrol. "
+                "Alaric reached for his leather satchel with his good right hand, his shattered left wrist throbbing in the damp cold. "
+                "'They shouldn't have arrived before dawn,' he muttered, blowing out the flame.\n\n"
+                "When the front latch splintered, he was already slipping through the iron grate into the damp darkness of the aqueduct."
+            )
+        elif "critique" in prompt_lower or "continuity" in prompt_lower:
+            findings = []
+            if self.simulate_contradiction:
+                findings.append(
+                    {
+                        "category": "injury",
+                        "severity": "blocker",
+                        "claim": "Protagonist climbed with both hands fully intact.",
+                        "conflicting_evidence": ["Fact #42: Alaric's left hand remains shattered and bandaged."],
+                        "source_references": ["Chapter 1, Scene 2"],
+                        "suggested_action": "Revise prose to depict one-handed climbing or assistance.",
+                    }
+                )
+            content = json.dumps(findings)
+        elif "bible" in prompt_lower or "premise" in prompt_lower:
             content = json.dumps(
                 {
                     "pitch": "A fallen royal alchemist must rebuild his shattered reputation while navigating political court treachery.",
@@ -133,20 +199,6 @@ class FakeProviderAdapter(BaseProviderAdapter):
                     },
                 ]
             )
-        elif "critique" in prompt_lower or "continuity" in prompt_lower:
-            findings = []
-            if self.simulate_contradiction:
-                findings.append(
-                    {
-                        "category": "injury",
-                        "severity": "blocker",
-                        "claim": "Protagonist climbed with both hands fully intact.",
-                        "conflicting_evidence": ["Fact #42: Alaric's left hand remains shattered and bandaged."],
-                        "source_references": ["Chapter 1, Scene 2"],
-                        "suggested_action": "Revise prose to depict one-handed climbing or assistance.",
-                    }
-                )
-            content = json.dumps(findings)
         elif "extract" in prompt_lower:
             content = json.dumps(
                 {
@@ -160,10 +212,18 @@ class FakeProviderAdapter(BaseProviderAdapter):
                     "threads_updated": [
                         {"thread_title": "City Guard Investigation", "operation": "advance", "note": "Vance discovered the lab"}
                     ],
+                    "character_updates": [
+                        {
+                            "name": "Alaric",
+                            "field": "wounds_status",
+                            "value": "Left wrist shattered and freshly bandaged",
+                            "note": "Prose: his shattered left wrist throbbing in the damp cold",
+                        },
+                        {"name": "Stranger Unknown", "field": "is_alive", "value": "dead"},
+                    ],
                 }
             )
         else:
-            # Default drafted chapter prose
             content = (
                 "The rain pounded against the leaded glass of Alaric's study, streaking the dark panorama of the Grand Dominion. "
                 "Beneath the flickering gaslamp, the vial of azure tincture glowed with an unsettling luminescence.\n\n"
@@ -188,9 +248,17 @@ class FakeProviderAdapter(BaseProviderAdapter):
 class OpenAICompatibleAdapter(BaseProviderAdapter):
     """Production adapter for OpenAI or any compatible endpoint (vLLM, Ollama, DeepSeek, OpenRouter, etc.)."""
 
-    def __init__(self, config: ProviderConfig, allowlist: Optional[List[str]] = None):
+    def __init__(
+        self,
+        config: ProviderConfig,
+        allowlist: Optional[List[str]] = None,
+        transport: Optional[httpx.BaseTransport] = None,
+        retry_backoff_seconds: float = 1.5,
+    ):
         super().__init__(config)
         self.allowlist = allowlist or []
+        self._transport = transport
+        self.retry_backoff_seconds = retry_backoff_seconds
         # Validate endpoint safety before making any calls
         validate_provider_endpoint(self.config.endpoint_url, self.allowlist)
 
@@ -243,42 +311,67 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
             payload["response_format"] = response_format
 
         try:
-            with httpx.Client(timeout=120.0) as client:
-                response = client.post(url, headers=self._get_headers(), json=payload)
-                if response.status_code != 200:
-                    safe_err = redact_secrets(response.text)
-                    raise RuntimeError(f"Provider error ({response.status_code}): {safe_err}")
+            response = None
+            # One retry for pre-submission failures only (connection refused,
+            # connect timeout, 429). These never reached the provider, so a
+            # retry cannot double-bill; timeouts after submission raise
+            # TimeoutError and stay billing-unknown.
+            for attempt_index in range(2):
+                try:
+                    with httpx.Client(timeout=120.0, transport=self._transport) as client:
+                        response = client.post(url, headers=self._get_headers(), json=payload)
+                except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                    if attempt_index == 0:
+                        logger.warning("Provider endpoint unreachable, retrying once: %s", redact_secrets(str(e)))
+                        time.sleep(self.retry_backoff_seconds)
+                        continue
+                    raise RuntimeError(
+                        "Provider endpoint could not be reached (connection failed after one retry)."
+                    ) from e
+                if response.status_code == 429 and attempt_index == 0:
+                    logger.warning("Provider rate limited the request; retrying once after backoff")
+                    time.sleep(self.retry_backoff_seconds)
+                    continue
+                break
 
-                data = response.json()
-                choices = data.get("choices", [])
-                if not choices:
-                    raise RuntimeError("Provider returned empty choices array.")
-                choice = choices[0]
-                message = choice.get("message", {})
-                content = message.get("content") or ""
-                usage = data.get("usage", {})
-                p_tokens = int(usage.get("prompt_tokens") or 0)
-                c_tokens = int(usage.get("completion_tokens") or 0)
-                t_tokens = int(usage.get("total_tokens") or (p_tokens + c_tokens))
-
-                # Calculate estimated cost if pricing profile is available
-                profile = self.config.model_profiles.get(selected_model, {}) if isinstance(self.config.model_profiles, dict) else {}
-                price_in = safe_decimal(profile.get("pricing_input_per_m"), "0.0")
-                price_out = safe_decimal(profile.get("pricing_output_per_m"), "0.0")
-                raw_cost = (Decimal(p_tokens) * price_in / Decimal(1000000)) + (
-                    Decimal(c_tokens) * price_out / Decimal(1000000)
+            if response.status_code == 429:
+                raise RuntimeError(
+                    f"Provider rate limited (429) after one retry: {redact_secrets(response.text)}"
                 )
-                cost = raw_cost.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+            if response.status_code != 200:
+                safe_err = redact_secrets(response.text)
+                raise RuntimeError(f"Provider error ({response.status_code}): {safe_err}")
 
-                return ProviderResponse(
-                    content=content,
-                    prompt_tokens=p_tokens,
-                    completion_tokens=c_tokens,
-                    total_tokens=t_tokens,
-                    cost_usd=cost,
-                    model=selected_model,
-                    raw_metadata={"id": data.get("id")},
-                )
+            data = response.json()
+            choices = data.get("choices", [])
+            if not choices:
+                raise RuntimeError("Provider returned empty choices array.")
+            choice = choices[0]
+            message = choice.get("message", {})
+            content = message.get("content") or ""
+            usage = data.get("usage", {})
+            p_tokens = int(usage.get("prompt_tokens") or 0)
+            c_tokens = int(usage.get("completion_tokens") or 0)
+            t_tokens = int(usage.get("total_tokens") or (p_tokens + c_tokens))
+
+            # Calculate estimated cost if pricing profile is available
+            profile = self.config.model_profiles.get(selected_model, {}) if isinstance(self.config.model_profiles, dict) else {}
+            price_in = safe_decimal(profile.get("pricing_input_per_m"), "0.0")
+            price_out = safe_decimal(profile.get("pricing_output_per_m"), "0.0")
+            raw_cost = (Decimal(p_tokens) * price_in / Decimal(1000000)) + (
+                Decimal(c_tokens) * price_out / Decimal(1000000)
+            )
+            cost = raw_cost.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+            return ProviderResponse(
+                content=content,
+                prompt_tokens=p_tokens,
+                completion_tokens=c_tokens,
+                total_tokens=t_tokens,
+                cost_usd=cost,
+                model=selected_model,
+                raw_metadata={"id": data.get("id")},
+            )
         except httpx.TimeoutException as e:
             logger.error("Provider request timed out")
             raise TimeoutError("Provider request timed out after submission") from e
