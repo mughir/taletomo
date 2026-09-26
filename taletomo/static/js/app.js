@@ -168,3 +168,120 @@ document.addEventListener("DOMContentLoaded", () => {
     updateCount();
   }
 });
+
+// 6. Style-dictionary chip pickers (multi-select for genre / subgenre / tone).
+// Composes the submitted value ("Fantasy / Xianxia", "Grim, Mysterious"),
+// suggests dictionary terms with their definitions, and accepts free-typed
+// custom terms — Enter or comma commits, Backspace removes the last chip.
+document.addEventListener("DOMContentLoaded", () => {
+  const pickers = document.querySelectorAll(".style-picker[data-field]");
+  if (!pickers.length) return;
+
+  let allTerms = {};
+  const termsSource = document.getElementById("style-terms-json");
+  if (termsSource) {
+    try {
+      allTerms = JSON.parse(termsSource.textContent);
+    } catch (e) {
+      console.error("Style terms JSON is invalid", e);
+    }
+  }
+
+  const { createApp, ref, computed } = window.Vue;
+
+  const pickerTemplate = `
+    <div class="style-picker-box" :class="{ 'is-open': open && suggestions.length }">
+      <span v-for="item in selected" :key="item" class="style-chip">
+        [[ item ]]
+        <button type="button" class="style-chip-remove" @click="removeTerm(item)" :aria-label="'Remove ' + item">&times;</button>
+      </span>
+      <input class="style-picker-input" type="text" v-model="query"
+        :placeholder="selected.length ? '' : placeholder"
+        @focus="open = true" @input="open = true" @blur="onBlur" @keydown="onKeydown"
+        :aria-label="fieldLabel" autocomplete="off">
+      <input type="hidden" :name="hiddenName" :value="hiddenValue">
+      <ul v-show="open && suggestions.length" class="style-suggestions" role="listbox">
+        <li v-for="s in suggestions" :key="s.name">
+          <button type="button" class="style-suggestion" role="option"
+            @mousedown.prevent="addTerm(s.name)" :title="s.definition">
+            <strong>[[ s.name ]]</strong><span>[[ s.definition ]]</span>
+          </button>
+        </li>
+      </ul>
+      <p v-if="open && query && !suggestions.length" class="style-suggestions-note">
+        Press Enter to use &ldquo;[[ query ]]&rdquo; as a custom term
+      </p>
+    </div>
+  `;
+
+  pickers.forEach((el) => {
+    const field = el.dataset.field;
+    const terms = allTerms[field] || [];
+    const initial = (el.dataset.initial || "")
+      .split(/[\/,]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    createApp({
+      delimiters: ["[[" , "]]"],
+      setup() {
+        const selected = ref(initial.slice());
+        const query = ref("");
+        const open = ref(false);
+        const separator = el.dataset.separator || ", ";
+        const hiddenName = el.dataset.hiddenName || field;
+        const fieldLabel = el.dataset.label || field;
+        const placeholder = el.dataset.placeholder || "Pick or type…";
+
+        const suggestions = computed(() => {
+          const q = query.value.trim().toLowerCase();
+          return terms
+            .filter((t) => !selected.value.some((s) => s.toLowerCase() === t.name.toLowerCase()))
+            .filter((t) => !q || t.name.toLowerCase().includes(q) || t.definition.toLowerCase().includes(q))
+            .slice(0, 8);
+        });
+
+        const hiddenValue = computed(() => selected.value.join(separator));
+
+        const addTerm = (name) => {
+          const clean = String(name || "").trim();
+          if (!clean) return;
+          if (!selected.value.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+            selected.value.push(clean);
+          }
+          query.value = "";
+          open.value = true;
+        };
+
+        const removeTerm = (name) => {
+          selected.value = selected.value.filter((s) => s !== name);
+        };
+
+        const onBlur = () => {
+          if (query.value.trim()) addTerm(query.value);
+          open.value = false;
+        };
+
+        const onKeydown = (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            addTerm(query.value);
+          } else if (event.key === ",") {
+            event.preventDefault();
+            addTerm(query.value);
+          } else if (event.key === "Backspace" && !query.value && selected.value.length) {
+            selected.value.pop();
+          } else if (event.key === "Escape") {
+            open.value = false;
+          }
+        };
+
+        return {
+          selected, query, open, suggestions, hiddenValue, hiddenName,
+          fieldLabel, placeholder, addTerm, removeTerm, onBlur, onKeydown,
+        };
+      },
+      template: pickerTemplate,
+    }).mount(el);
+  });
+});

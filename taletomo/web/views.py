@@ -56,15 +56,28 @@ User = get_user_model()
 
 
 def _style_term_lists(user):
-    """Dictionary terms grouped per style axis, for the creation form datalists."""
+    """Dictionary terms grouped per style axis, for the creation form pickers.
+
+    Multi-value axes (genre, subgenre, tone) render as chip pickers fed by
+    ``style_terms_json``; single-value axes use datalist suggestions.
+    """
     terms = StyleTerm.visible_to(user)
+    by_field = {}
+    for term in terms:
+        by_field.setdefault(term.field, []).append(term)
+    terms_json = {
+        field: [{"name": t.name, "definition": t.definition} for t in by_field.get(field, [])]
+        for field, _label in StyleField.choices
+    }
     return {
-        "genre_terms": terms.filter(field=StyleField.GENRE),
-        "subgenre_terms": terms.filter(field=StyleField.SUBGENRE),
-        "tone_terms": terms.filter(field=StyleField.TONE),
-        "pov_terms": terms.filter(field=StyleField.POV),
-        "tense_terms": terms.filter(field=StyleField.TENSE),
-        "pacing_terms": terms.filter(field=StyleField.PACING),
+        "genre_terms": by_field.get(StyleField.GENRE, []),
+        "subgenre_terms": by_field.get(StyleField.SUBGENRE, []),
+        "tone_terms": by_field.get(StyleField.TONE, []),
+        "pov_terms": by_field.get(StyleField.POV, []),
+        "tense_terms": by_field.get(StyleField.TENSE, []),
+        "pacing_terms": by_field.get(StyleField.PACING, []),
+        "protagonist_terms": by_field.get(StyleField.PROTAGONIST, []),
+        "style_terms_json": terms_json,
     }
 
 
@@ -148,6 +161,7 @@ def project_new(request):
         pov = request.POST.get("pov", "Third Person Limited").strip() or "Third Person Limited"
         tense = request.POST.get("tense", "Past Tense").strip() or "Past Tense"
         pacing = request.POST.get("pacing", "Balanced").strip() or "Balanced"
+        protagonist_type = request.POST.get("protagonist_type", "").strip()
 
         words_map = {
             ProjectLengthPreset.SHORT: 1200,
@@ -181,6 +195,7 @@ def project_new(request):
             pov=pov,
             tense=tense,
             pacing=pacing,
+            protagonist_type=protagonist_type,
             length_preset=length_preset,
             target_words_per_chapter=target_words,
         )

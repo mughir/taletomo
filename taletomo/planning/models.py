@@ -52,6 +52,12 @@ class Project(UUIDModel):
     pov = models.CharField(max_length=50, default="Third Person Limited")
     tense = models.CharField(max_length=30, default="Past Tense")
     pacing = models.CharField(max_length=50, default="Balanced")
+    protagonist_type = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Protagonist archetype (e.g. Underdog, Anti-hero) from the style dictionary",
+    )
     content_boundaries = models.TextField(blank=True, default="")
 
     active_branch_head = models.CharField(max_length=50, default="rev_1")

@@ -48,4 +48,13 @@ BUILTIN_TERMS = [
     ("pacing", "Balanced", "Steady alternation of pressure and release; scene and sequel in rhythm.", "Every raid is followed by a reckoning at the campfire."),
     ("pacing", "Breakneck", "Short scenes, hard cuts, and chapter-end hooks; momentum outranks texture.", "End every chapter on the door breaking."),
     ("pacing", "Episodic", "A self-contained case or quest per arc with a loose serial spine underneath.", "A new client each week, while the debt ledger grows quietly in the background."),
+    # --- Protagonist type --------------------------------------------------------------
+    ("protagonist", "Underdog", "Starts weakest in the room; growth is the promise, and every gain is paid for.", "The lantern-boy sweeps the sect's floors and drills every footwork form in secret."),
+    ("protagonist", "Reluctant Hero", "Thrust into stakes they keep trying to refuse, and refusal keeps getting costlier.", "She burns the summons; by morning it has rewritten itself on her door."),
+    ("protagonist", "Chosen One", "Marked by prophecy or fate; the arc is living up to — or rejecting — the label.", "The sword chose her, and everyone but her treats that as settled law."),
+    ("protagonist", "Anti-hero", "Wins by questionable means; the reader roots for and against them at once.", "He poisons the general, frames the alibi, and sleeps fine — mostly."),
+    ("protagonist", "Villain Protagonist", "The story rides the antagonist's mind; sympathy without excuse.", "She bills the city for the fire she set, and the council pays."),
+    ("protagonist", "Everyman", "Ordinary competence against extraordinary circumstances; relatability is the anchor.", "A bus driver, a shotgun, and the end of the world."),
+    ("protagonist", "Trickster", "Wins by wit, cons, and rule-bending; plans nested inside plans.", "He sells the same bridge to three guilds — and needs all three to show up."),
+    ("protagonist", "Mentor", "The teacher's journey; stakes are measured through students and legacy.", "His last student will face the thing that broke him."),
 ]
