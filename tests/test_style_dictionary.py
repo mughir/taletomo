@@ -203,10 +203,14 @@ def test_project_creation_form_offers_dictionary_choices_and_accepts_values():
     assert 'data-field="genre"' in content
     assert 'data-field="tone"' in content
     assert 'data-field="subgenre"' in content
+    # Protagonist picker merges archetypes and traits; tags picker present.
+    assert 'data-terms-fields="protagonist,protagonist_trait"' in content
+    assert 'data-field="tags"' in content
     assert "datalist" in content
     assert 'value="Slow Burn"' in content  # pacing datalist
-    assert 'value="Underdog"' in content  # protagonist datalist
-    assert "Xianxia" in content  # terms blob carries genre suggestions
+    assert "Underdog" in content  # protagonist archetypes in the terms blob
+    assert "Gender Bender" in content  # novel tags in the terms blob
+    assert "Xianxia" in content  # genre suggestions in the terms blob
 
     response = client.post(
         reverse("taletomo:project_new"),
@@ -219,7 +223,8 @@ def test_project_creation_form_offers_dictionary_choices_and_accepts_values():
             "pov": "First Person",
             "tense": "Present Tense",
             "pacing": "Slow Burn",
-            "protagonist_type": "Trickster",
+            "protagonist_type": "Trickster, Female Protagonist",
+            "novel_tags": "Gender Bender, Reincarnation",
             "target_chapters": "50",
             "length_preset": "standard",
         },
@@ -231,7 +236,8 @@ def test_project_creation_form_offers_dictionary_choices_and_accepts_values():
     assert project.subgenre == "Court Intrigue, Progression Fantasy"
     assert project.pacing == "Slow Burn"
     assert project.tense == "Present Tense"
-    assert project.protagonist_type == "Trickster"
+    assert project.protagonist_type == "Trickster, Female Protagonist"
+    assert project.novel_tags == "Gender Bender, Reincarnation"
 
 
 @pytest.mark.django_db
@@ -256,3 +262,30 @@ def test_protagonist_axis_is_seeded_resolved_and_injected_into_prompts():
         e for e in package.manifest.source_entries if e["id"] == "style-dictionary"
     )
     assert style_entry["category"] == "constraints"
+
+
+@pytest.mark.django_db
+def test_protagonist_traits_and_novel_tags_mix_into_prompts():
+    user = User.objects.create_user(username="tags_author")
+    project = PlanningService.create_project_with_scaffold(
+        owner=user,
+        title="Gender Bender Chronicle",
+        premise="Trait and tag mixing fixture",
+        protagonist_type="Trickster, Female Protagonist",
+        novel_tags="Gender Bender, Transmigration",
+    )
+    chapter = project.chapters.get(chapter_number=1)
+
+    resolved = {term.name: term.field for term in StyleTerm.resolve_for_project(project)}
+    # Archetype and gender trait resolve from the protagonist value; tropes
+    # resolve from the tags value.
+    assert resolved["Trickster"] == StyleField.PROTAGONIST
+    assert resolved["Female Protagonist"] == StyleField.PROTAGONIST_TRAIT
+    assert resolved["Gender Bender"] == StyleField.TAGS
+    assert resolved["Transmigration"] == StyleField.TAGS
+
+    package = ContextAssembler.assemble_chapter_context(chapter)
+    assert "Protagonist Trait — Female Protagonist" in package.user_prompt
+    assert "Novel Tags — Gender Bender" in package.user_prompt
+    assert "body swap, transmigration, disguise, or transition" in package.user_prompt
+    assert "the novel she abandoned at chapter twelve" in package.user_prompt  # example

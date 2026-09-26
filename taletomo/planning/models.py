@@ -53,10 +53,16 @@ class Project(UUIDModel):
     tense = models.CharField(max_length=30, default="Past Tense")
     pacing = models.CharField(max_length=50, default="Balanced")
     protagonist_type = models.CharField(
-        max_length=100,
+        max_length=200,
         blank=True,
         default="",
-        help_text="Protagonist archetype (e.g. Underdog, Anti-hero) from the style dictionary",
+        help_text="Protagonist archetypes and traits (e.g. 'Trickster, Female Protagonist') from the style dictionary",
+    )
+    novel_tags = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        help_text="NovelUpdates-style trope tags (e.g. 'Gender Bender, Reincarnation') from the style dictionary",
     )
     content_boundaries = models.TextField(blank=True, default="")
 
