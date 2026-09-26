@@ -36,3 +36,7 @@ Thumbs.db
 
 # Local visual review artifacts
 .visreview/
+
+# Celery beat runtime state (bind-mounted container writes it into the source dir)
+celerybeat-schedule
+celerybeat-schedule.db
