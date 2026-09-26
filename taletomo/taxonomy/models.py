@@ -77,13 +77,14 @@ class StyleTerm(UUIDModel):
         return cls.objects.filter(models.Q(is_builtin=True) | models.Q(created_by=user))
 
     @classmethod
-    def resolve_for_project(cls, project, max_terms: int = 10) -> list:
+    def resolve_for_project(cls, project, max_terms: int = 18) -> list:
         """Resolves the project's style values to visible dictionary terms.
 
         Style values are free text that may hold several choices ("Grim,
         Mysterious" or "Fantasy / Xianxia"), so each comma/slash-separated
         token is matched case-insensitively. Unmatched tokens simply do not
-        contribute — custom typing always stays valid.
+        contribute — custom typing always stays valid. The cap only bounds
+        prompt size; the style block is non-mandatory and budget-skippable.
         """
         terms = cls.objects.filter(
             models.Q(is_builtin=True) | models.Q(created_by=project.owner)
