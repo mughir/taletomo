@@ -9,6 +9,8 @@ from taletomo.canon.models import (
     StorySnapshot,
     TruthScope,
     WorldRule,
+    find_project_character,
+    parse_alive_value,
 )
 from taletomo.consistency.models import FindingSeverity, FindingStatus
 from taletomo.core.models import AuditLog
@@ -74,8 +76,10 @@ class CanonService:
         actor=None,
         override_blockers: bool = False,
         override_rationale: str = "",
+        thread_updates: Optional[List[Dict[str, Any]]] = None,
+        character_updates: Optional[List[Dict[str, Any]]] = None,
     ) -> StorySnapshot:
-        """Atomically validates preconditions, appends story events, confirms canon facts, advances branch head, and saves snapshot."""
+        """Atomically validates preconditions, appends story events, confirms canon facts, applies thread and character updates, advances branch head, and saves snapshot."""
         # 1. Branch head check to prevent stale commit / race conditions
         current_project = Project.objects.select_for_update().get(id=project.id)
         if actor is None or actor.pk != current_project.owner_id:
@@ -147,6 +151,58 @@ class CanonService:
                 revision_valid_from=current_project.active_branch_head,
                 canonical_status=CanonFact.Status.CONFIRMED,
             )
+
+        # 3.5 Apply approved plot-thread updates extracted from prose
+        for tu in thread_updates or []:
+            title = str(tu.get("thread_title", "")).strip()
+            if not title:
+                continue
+            thread, _created = PlotThread.objects.get_or_create(
+                project=current_project,
+                title=title[:200],
+                defaults={
+                    "category": PlotThread.Category.PROMISE,
+                    "setup_chapter": chapter.chapter_number,
+                },
+            )
+            operation = str(tu.get("operation", "advance")).lower()
+            status_map = {
+                "open": PlotThread.Status.OPEN,
+                "reopen": PlotThread.Status.OPEN,
+                "advance": PlotThread.Status.PROGRESSING,
+                "reinforce": PlotThread.Status.PROGRESSING,
+                "close": PlotThread.Status.RESOLVED,
+                "resolve": PlotThread.Status.RESOLVED,
+                "abandon": PlotThread.Status.ABANDONED,
+            }
+            thread.status = status_map.get(operation, thread.status)
+            note = str(tu.get("note", "")).strip()
+            if note:
+                entry = f"Ch {chapter.chapter_number}: {note}"
+                thread.notes = f"{thread.notes}\n{entry}" if thread.notes else entry
+            if operation in ("close", "resolve") and thread.payoff_chapter is None:
+                thread.payoff_chapter = chapter.chapter_number
+            thread.save()
+
+        # 3.6 Apply approved character-state updates extracted from prose
+        for cu in character_updates or []:
+            character = find_project_character(current_project, str(cu.get("name", "")))
+            if character is None:
+                continue
+            field = str(cu.get("field", "")).strip()
+            value = cu.get("value")
+            if field == "is_alive":
+                parsed = parse_alive_value(value)
+                if parsed is None:
+                    continue
+                character.is_alive = parsed
+            elif field == "wounds_status" and value:
+                character.wounds_status = str(value)[:2000]
+            elif field == "goals" and value:
+                character.goals = str(value)[:2000]
+            else:
+                continue
+            character.save(update_fields=[field, "updated_at"])
 
         # 4. Advance branch head revision (e.g. rev_1 -> rev_2)
         try:

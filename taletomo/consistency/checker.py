@@ -15,6 +15,89 @@ from taletomo.providers.adapters import BaseProviderAdapter
 
 logger = logging.getLogger(__name__)
 
+# --- Generalized injury/impairment detection -------------------------------
+# Wound records are free text ("Left hand shattered and bandaged"); detection
+# extracts (side, limb) pairs from the record and flags prose where an action
+# verb operates the impaired limb. A wound only counts as physical impairment
+# when an impairment word co-occurs, so "afraid of crowds" never blocks prose.
+
+IMPAIRMENT_WORDS = (
+    "broken",
+    "shattered",
+    "fractured",
+    "cracked",
+    "sprained",
+    "strained",
+    "torn",
+    "burned",
+    "bandaged",
+    "missing",
+    "amputated",
+    "paralyzed",
+    "numb",
+    "dislocated",
+    "bruised",
+    "wounded",
+    "injured",
+)
+
+_LIMB_WORDS = (
+    "hands?|arms?|fists?|wrists?|fingers?|thumbs?|legs?|feet|knees?|"
+    "elbows?|shoulders?|ankles?|hips?|ribs?|eyes?"
+)
+_LIMB_PATTERN = re.compile(rf"\b(left|right)?\s?({_LIMB_WORDS})\b")
+_HAND_LIMBS = {"hand", "arm", "fist", "wrist", "finger", "thumb", "shoulder", "elbow"}
+_BOTH_HANDS_PATTERN = re.compile(
+    r"\b(?:with|using|on)\s+both\s+(?:hands|arms|fists)\b|\bboth\s+(?:hands|arms|fists)\b"
+)
+_ACTION_VERBS = (
+    "held|holding|grips?|gripped|gripping|grabs?|grabbed|grabbing|caught|catching|"
+    "clutched|clutching|struck|striking|punches?|punched|punching|slams?|slammed|slamming|"
+    "swings?|swung|swinging|lifts?|lifted|lifting|carries|carried|carrying|waves?|waved|waving|"
+    "points?|pointed|pointing|writes|wrote|writing|fires|fired|firing|aims?|aimed|aiming|"
+    "steers?|steered|steering|braces|braced|bracing|pushes|pushed|pushing|pulls|pulled|pulling|"
+    "throws?|threw|thrown|throwing|blocks|blocked|blocking|parries|parried|parrying|"
+    "climbs?|climbed|climbing|kicks?|kicked|kicking|runs|running|sprints?|sprinting|"
+    "jumps?|jumped|jumping|leaps?|leaped|leaping|stomps?|stomped|stomping|kneels|knelt"
+)
+
+
+def _extract_impaired_limbs(wounds: str) -> list:
+    """Extracts (side, limb) pairs from a wound record; empty when not physically impaired."""
+    if not wounds:
+        return []
+    lower = wounds.lower()
+    if not any(word in lower for word in IMPAIRMENT_WORDS):
+        return []
+    pairs = []
+    for match in _LIMB_PATTERN.finditer(lower):
+        side = match.group(1) or ""
+        limb = match.group(2)
+        if limb == "feet":
+            limb = "foot"
+        elif limb.endswith("s"):
+            limb = limb[:-1]
+        pairs.append((side, limb))
+    return pairs
+
+
+def _match_injury_actions(prose_lower: str, injuries: list) -> list:
+    """Returns prose fragments where an action verb operates an impaired limb."""
+    matched = []
+    if any(limb in _HAND_LIMBS for _side, limb in injuries):
+        both = _BOTH_HANDS_PATTERN.search(prose_lower)
+        if both:
+            matched.append(both.group(0))
+    for side, limb in injuries:
+        limb_rx = rf"\b{side}\s+{limb}s?\b" if side else rf"\b{limb}s?\b"
+        for pattern in (
+            rf"\b(?:{_ACTION_VERBS})[^.!?]{{0,60}}{limb_rx}",
+            rf"{limb_rx}[^.!?]{{0,60}}\b(?:{_ACTION_VERBS})\b",
+        ):
+            for m in re.finditer(pattern, prose_lower):
+                matched.append(prose_lower[m.start() : m.end()].strip())
+    return matched
+
 
 def _clean_draft_id(draft_id: Optional[Any]) -> Optional[uuid.UUID]:
     if not draft_id:
@@ -56,37 +139,34 @@ class ContinuityChecker:
                     )
                 )
 
-        # 2. Known injury / impairment check
-        injured_characters = Character.objects.filter(
-            project=project
-        ).exclude(wounds_status="")
+        # 2. Known injury / impairment check (generalized from wound records)
+        injured_characters = Character.objects.filter(project=project).exclude(wounds_status="")
         for char in injured_characters:
-            wounds = char.wounds_status.lower()
-            if "left hand" in wounds or "left arm" in wounds or "broken" in wounds or "shattered" in wounds:
-                # Contradiction triggers
-                forbidden_actions = [
-                    "with both hands",
-                    "held the sword in his left hand",
-                    "climbed using both hands",
-                    "struck with his left fist",
-                    "caught the ledge with both hands",
-                ]
-                for action in forbidden_actions:
-                    if action in prose_lower and char.name.lower() in prose_lower:
-                        findings.append(
-                            ContinuityFinding(
-                                project=project,
-                                chapter=chapter,
-                                draft_id=clean_id,
-                                category=FindingCategory.INJURY,
-                                severity=FindingSeverity.BLOCKER,
-                                confidence=0.95,
-                                claim=f"{char.name} performed action '{action}', violating documented physical status.",
-                                conflicting_evidence=[f"Wound Record: {char.name} - {char.wounds_status}"],
-                                source_references=[f"Chapter {chapter.chapter_number}"],
-                                suggested_action=f"Revise prose to respect {char.name}'s injury: {char.wounds_status}.",
-                            )
-                        )
+            if not char.name or not char.name.strip():
+                continue
+            if char.name.lower() not in prose_lower:
+                continue
+            injuries = _extract_impaired_limbs(char.wounds_status)
+            if not injuries:
+                continue
+            for action in _match_injury_actions(prose_lower, injuries)[:3]:
+                findings.append(
+                    ContinuityFinding(
+                        project=project,
+                        chapter=chapter,
+                        draft_id=clean_id,
+                        category=FindingCategory.INJURY,
+                        severity=FindingSeverity.BLOCKER,
+                        confidence=0.95,
+                        claim=(
+                            f"{char.name} performed action '{action}', violating documented "
+                            f"physical status: {char.wounds_status}."
+                        ),
+                        conflicting_evidence=[f"Wound Record: {char.name} - {char.wounds_status}"],
+                        source_references=[f"Chapter {chapter.chapter_number}"],
+                        suggested_action=f"Revise prose to respect {char.name}'s injury: {char.wounds_status}.",
+                    )
+                )
 
         # 3. Prohibited outcomes check from Chapter Contract
         plan = getattr(chapter, "plan", None)
@@ -151,7 +231,7 @@ class ContinuityChecker:
             "Each finding must have: category, severity ('blocker', 'warning', 'advisory'), claim, conflicting_evidence, source_references, suggested_action. "
             "If no issues, return []."
         )
-        user_prompt = f"Contract:\n{contract_text}\n\nChapter Draft:\n{prose}\n\nAnalyze continuity and output JSON:"
+        user_prompt = f"TASK: CRITIQUE_CONTINUITY\n\nContract:\n{contract_text}\n\nChapter Draft:\n{prose}\n\nAnalyze continuity and output JSON:"
 
         try:
             resp = adapter.generate_text(
@@ -249,6 +329,15 @@ class ContinuityChecker:
             ai_findings = ContinuityChecker.run_model_critique(adapter, chapter, prose, contract_text, draft_id)
             findings.extend(ai_findings)
 
+        if findings:
+            # Deduplicate against open findings for this chapter: repeated
+            # generations or manual re-saves must not pile up identical claims.
+            existing_claims = set(
+                ContinuityFinding.objects.filter(
+                    chapter=chapter, status=FindingStatus.OPEN
+                ).values_list("claim", flat=True)
+            )
+            findings = [f for f in findings if f.claim not in existing_claims]
         if findings:
             ContinuityFinding.objects.bulk_create(findings)
 

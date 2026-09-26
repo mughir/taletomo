@@ -48,6 +48,7 @@ class JobStatus(models.TextChoices):
     SUBMITTED = "submitted", "Submitted"
     GENERATING = "generating", "Generating"
     CHECKING = "checking", "Checking Continuity"
+    EXTRACTING = "extracting", "Extracting Proposed Canon"
     READY = "ready", "Ready for Review"
     CANCELLED = "cancelled", "Cancelled"
     FAILED = "failed", "Failed"

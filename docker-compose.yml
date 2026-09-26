@@ -67,6 +67,24 @@ services:
       redis:
         condition: service_healthy
 
+  beat:
+    build: .
+    container_name: taletomo-beat
+    command: celery -A config beat -l INFO
+    volumes:
+      - .:/app
+    environment:
+      - DATABASE_URL=postgres://taletomo:taletomo_password@db:5432/taletomo
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=taletomo-dev-secret-key-change-in-production-1234567890
+      - DEBUG=True
+      - CELERY_ALWAYS_EAGER=False
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   taletomo_pgdata:
   taletomo_redisdata:
