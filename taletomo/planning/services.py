@@ -32,6 +32,7 @@ class PlanningService:
         tense: str = "Past Tense",
         pacing: str = "Balanced",
         protagonist_type: str = "",
+        novel_tags: str = "",
         length_preset: str = ProjectLengthPreset.STANDARD,
         target_words_per_chapter: int = 2200,
         content_boundaries: str = "",
@@ -67,6 +68,7 @@ class PlanningService:
             tense=tense,
             pacing=pacing,
             protagonist_type=protagonist_type,
+            novel_tags=novel_tags,
             target_words_per_chapter=target_words_per_chapter,
             content_boundaries=content_boundaries,
         )

@@ -77,6 +77,8 @@ def _style_term_lists(user):
         "tense_terms": by_field.get(StyleField.TENSE, []),
         "pacing_terms": by_field.get(StyleField.PACING, []),
         "protagonist_terms": by_field.get(StyleField.PROTAGONIST, []),
+        "protagonist_trait_terms": by_field.get(StyleField.PROTAGONIST_TRAIT, []),
+        "tags_terms": by_field.get(StyleField.TAGS, []),
         "style_terms_json": terms_json,
     }
 
@@ -162,6 +164,7 @@ def project_new(request):
         tense = request.POST.get("tense", "Past Tense").strip() or "Past Tense"
         pacing = request.POST.get("pacing", "Balanced").strip() or "Balanced"
         protagonist_type = request.POST.get("protagonist_type", "").strip()
+        novel_tags = request.POST.get("novel_tags", "").strip()
 
         words_map = {
             ProjectLengthPreset.SHORT: 1200,
@@ -196,6 +199,7 @@ def project_new(request):
             tense=tense,
             pacing=pacing,
             protagonist_type=protagonist_type,
+            novel_tags=novel_tags,
             length_preset=length_preset,
             target_words_per_chapter=target_words,
         )

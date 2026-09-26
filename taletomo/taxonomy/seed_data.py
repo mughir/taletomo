@@ -48,7 +48,7 @@ BUILTIN_TERMS = [
     ("pacing", "Balanced", "Steady alternation of pressure and release; scene and sequel in rhythm.", "Every raid is followed by a reckoning at the campfire."),
     ("pacing", "Breakneck", "Short scenes, hard cuts, and chapter-end hooks; momentum outranks texture.", "End every chapter on the door breaking."),
     ("pacing", "Episodic", "A self-contained case or quest per arc with a loose serial spine underneath.", "A new client each week, while the debt ledger grows quietly in the background."),
-    # --- Protagonist type --------------------------------------------------------------
+    # --- Protagonist type (archetypes) --------------------------------------------------------------
     ("protagonist", "Underdog", "Starts weakest in the room; growth is the promise, and every gain is paid for.", "The lantern-boy sweeps the sect's floors and drills every footwork form in secret."),
     ("protagonist", "Reluctant Hero", "Thrust into stakes they keep trying to refuse, and refusal keeps getting costlier.", "She burns the summons; by morning it has rewritten itself on her door."),
     ("protagonist", "Chosen One", "Marked by prophecy or fate; the arc is living up to — or rejecting — the label.", "The sword chose her, and everyone but her treats that as settled law."),
@@ -57,4 +57,24 @@ BUILTIN_TERMS = [
     ("protagonist", "Everyman", "Ordinary competence against extraordinary circumstances; relatability is the anchor.", "A bus driver, a shotgun, and the end of the world."),
     ("protagonist", "Trickster", "Wins by wit, cons, and rule-bending; plans nested inside plans.", "He sells the same bridge to three guilds — and needs all three to show up."),
     ("protagonist", "Mentor", "The teacher's journey; stakes are measured through students and legacy.", "His last student will face the thing that broke him."),
+    # --- Protagonist trait (gender, status — mixes with any archetype) --------------------------------
+    ("protagonist_trait", "Female Protagonist", "The lead is a woman; her womanhood shapes how the world treats her without defining her whole arc.", "The court underestimates the new spymaster — she counts on it."),
+    ("protagonist_trait", "Male Protagonist", "The lead is a man.", "He inherits the debt, the blade, and the feud in the same week."),
+    ("protagonist_trait", "Non-binary Protagonist", "The lead lives outside the binary; the world's categories misfit them and the prose respects them.", "Every form in the empire has two boxes; they check neither and pay the clerk extra."),
+    ("protagonist_trait", "Wealthy Protagonist", "Rich from page one; money solves problems loudly and creates worse ones quietly.", "She buys the loan her rival holds — then keeps the payments coming, why ruin a good leash?"),
+    ("protagonist_trait", "Poor Protagonist", "Every expense is a decision and every windfall is a plot event.", "The reward for the quest is a year of rent; the danger is the rent collector who came along."),
+    # --- Novel tags (NovelUpdates-style trope flags; mix freely) --------------------------------------
+    ("tags", "Gender Bender", "A lead lives as, becomes, or is transformed into another gender — body swap, transmigration, disguise, or transition; identity friction drives the story.", "He wakes in the duke's daughter's body, and the signet ring still answers to his blood."),
+    ("tags", "Reincarnation", "Death begins a new life with memories intact; the past life is knowledge to spend.", "The hero dies on page one and is reborn as the villain's overlooked third son."),
+    ("tags", "Transmigration", "A soul crosses into another body or world, often a story the soul already knows.", "She wakes inside the novel she abandoned at chapter twelve — as cannon fodder on page three."),
+    ("tags", "System", "A game-like interface grants quests, levels, and penalties; the System has opinions.", "DING. New quest: survive until dawn. Reward: one skill point. Penalty: everything."),
+    ("tags", "Villainess", "The lead inhabits the villainess's doomed role and rewrites her script before the execution flag falls.", "The doom flag is three chapters away; the tea party is her first move."),
+    ("tags", "Weak to Strong", "The lead starts at the bottom of the power curve and earns every tier on screen.", "From last-place disciple to tournament dark horse, one bruise at a time."),
+    ("tags", "Overpowered Protagonist", "The lead is already the strongest in the room; tension comes from restraint, boredom, and what power cannot fix.", "He seals his cultivation to taste the fight — the sealing is the story."),
+    ("tags", "Multiple POV", "Chapters alternate between several viewpoint characters; dramatic irony compounds.", "The thief's chapter ends where the inquisitor's begins — same alley, opposite purposes."),
+    ("tags", "Harem", "Multiple love interests orbit the lead, and the orbit itself has politics.", "Three letters, three seals, one answer he cannot afford to send."),
+    ("tags", "Slow Romance", "Romance builds across arcs; the wait is the point.", "Two hundred chapters of shared umbrellas before anyone says the word."),
+    ("tags", "Yandere", "Devotion that tips into obsession; love as a threat vector.", "He keeps a ledger of everyone who spoke to her, and last week it gained columns."),
+    ("tags", "Survival", "Scarcity and elimination pressure; the environment is the antagonist.", "Water is the scoreboard, and the sun is winning."),
+    ("tags", "Slow Life", "Low-stakes comfort and competence; the plot is a garden that grows.", "Today's crisis is a sourdough starter, and there will be tea about it."),
 ]

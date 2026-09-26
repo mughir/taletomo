@@ -216,7 +216,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   pickers.forEach((el) => {
     const field = el.dataset.field;
-    const terms = allTerms[field] || [];
+    // A picker may merge several dictionary axes into one suggestion list
+    // (e.g. protagonist archetypes + protagonist traits).
+    const fieldKeys = (el.dataset.termsFields || field).split(",").map((k) => k.trim()).filter(Boolean);
+    const terms = fieldKeys.flatMap((key) => allTerms[key] || []);
     const initial = (el.dataset.initial || "")
       .split(/[\/,]/)
       .map((part) => part.trim())

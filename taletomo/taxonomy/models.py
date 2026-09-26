@@ -8,7 +8,13 @@ from taletomo.core.models import UUIDModel
 
 
 class StyleField(models.TextChoices):
-    """The project style axes backed by the dictionary."""
+    """The project style axes backed by the dictionary.
+
+    Protagonist archetypes and protagonist traits (gender, wealth, …) are two
+    dictionary fields shown in one multi-select picker; story-level tropes
+    (Gender Bender, Reincarnation, …) live in the NovelUpdates-style tags
+    axis, which mixes freely with everything else.
+    """
 
     GENRE = "genre", "Genre"
     SUBGENRE = "subgenre", "Subgenre"
@@ -17,6 +23,12 @@ class StyleField(models.TextChoices):
     TENSE = "tense", "Narrative Tense"
     PACING = "pacing", "Pacing"
     PROTAGONIST = "protagonist", "Protagonist Type"
+    PROTAGONIST_TRAIT = "protagonist_trait", "Protagonist Trait"
+    TAGS = "tags", "Novel Tags"
+
+
+# The protagonist picker resolves against archetypes AND traits.
+PROTAGONIST_FIELDS = (StyleField.PROTAGONIST, StyleField.PROTAGONIST_TRAIT)
 
 
 class StyleTerm(UUIDModel):
@@ -82,14 +94,15 @@ class StyleTerm(UUIDModel):
 
         resolved = []
         seen = set()
-        for field_value, raw in (
-            (StyleField.GENRE, project.genre),
-            (StyleField.SUBGENRE, project.subgenre),
-            (StyleField.TONE, project.tone),
-            (StyleField.POV, project.pov),
-            (StyleField.TENSE, project.tense),
-            (StyleField.PACING, project.pacing),
-            (StyleField.PROTAGONIST, getattr(project, "protagonist_type", "")),
+        for fields, raw in (
+            ((StyleField.GENRE,), project.genre),
+            ((StyleField.SUBGENRE,), project.subgenre),
+            ((StyleField.TONE,), project.tone),
+            ((StyleField.POV,), project.pov),
+            ((StyleField.TENSE,), project.tense),
+            ((StyleField.PACING,), project.pacing),
+            (PROTAGONIST_FIELDS, getattr(project, "protagonist_type", "")),
+            ((StyleField.TAGS,), getattr(project, "novel_tags", "")),
         ):
             if not raw:
                 continue
@@ -97,7 +110,10 @@ class StyleTerm(UUIDModel):
                 part = part.strip()
                 if not part:
                     continue
-                term = by_key.get((field_value, part.lower()))
+                term = next(
+                    (by_key.get((field_value, part.lower())) for field_value in fields if by_key.get((field_value, part.lower()))),
+                    None,
+                )
                 if term is not None and term.pk not in seen:
                     seen.add(term.pk)
                     resolved.append(term)
