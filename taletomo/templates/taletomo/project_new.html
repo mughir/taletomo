@@ -11,9 +11,20 @@
   </div>
 </section>
 
+<div style="margin-bottom: 24px; padding: 18px 24px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: var(--radius-card); display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+  <div>
+    <strong>✨ Want guided AI co-planning?</strong>
+    <p style="margin: 4px 0 0; color: var(--ink-soft); font-size: 0.9rem;">Launch the 5-step interactive Worldbuilding Wizard to co-create your Bible, magic rules, rival factions, and cast.</p>
+  </div>
+  <a href="{% url 'taletomo:project_wizard' %}" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
+    Launch Worldbuilding Wizard →
+  </a>
+</div>
+
 <div class="form-layout">
   {{ style_terms_json|json_script:"style-terms-json" }}
   <form method="post" class="form-card" aria-label="Create a novel">
+
     {% csrf_token %}
 
     <section class="form-section" aria-labelledby="story-foundation-heading">

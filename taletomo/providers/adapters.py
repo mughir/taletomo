@@ -167,8 +167,140 @@ class FakeProviderAdapter(BaseProviderAdapter):
                         "suggested_action": "Revise prose to depict one-handed climbing or assistance.",
                     }
                 )
-            content = json.dumps(findings)
+        elif "task: replan_chapter_plan" in prompt_lower:
+            ch_match = re.search(r"chapter:\s*(\d+)", prompt, re.IGNORECASE)
+            ch_num = int(ch_match.group(1)) if ch_match else 1
+            wounds_match = re.search(
+                r"active character wounds & impairments:\s*([^\n]+)", prompt, re.IGNORECASE
+            )
+            wounds_str = wounds_match.group(1).strip() if wounds_match else ""
+            threads_match = re.search(r"open plot threads:\s*([^\n]+)", prompt, re.IGNORECASE)
+            threads_str = threads_match.group(1).strip() if threads_match else ""
+
+            continuity_reqs = []
+            if wounds_str and wounds_str != "None":
+                continuity_reqs.append(f"Account for active injuries: {wounds_str}")
+            else:
+                continuity_reqs.append("Account for all active character wounds and current locations.")
+
+            objectives = [f"Reconcile recent canon revelations into Chapter {ch_num}."]
+            if threads_str and threads_str != "None":
+                objectives.append(f"Address open plot threads: {threads_str}")
+            else:
+                objectives.append("Advance narrative tension while respecting character status.")
+
+            content = json.dumps(
+                {
+                    "title": f"The Frontier Trial of Chapter {ch_num}",
+                    "objectives": objectives,
+                    "required_beats": [
+                        f"Opening scene deals with immediate fallout from earlier events.",
+                        f"Protagonist makes a tactical choice under pressure.",
+                        f"Cliffhanger hook transitioning forward.",
+                    ],
+                    "prohibited_outcomes": [
+                        "Do not miraculously heal unhealed character injuries without magic.",
+                        "Do not resolve the overarching series spine conflict prematurely.",
+                    ],
+                    "continuity_requirements": continuity_reqs,
+                    "thread_operations": {
+                        "advance": [t.strip() for t in threads_str.split(",") if t.strip()]
+                        or ["Primary Conflict"],
+                        "open": [],
+                        "close": [],
+                    },
+                    "scenes": [
+                        {
+                            "scene_order": 1,
+                            "objective": f"Assess damage and regroup in Chapter {ch_num}.",
+                            "conflict": "Physical limitation or tactical friction",
+                            "estimated_words": 1100,
+                        },
+                        {
+                            "scene_order": 2,
+                            "objective": f"Formulate next move and press forward in Chapter {ch_num}.",
+                            "conflict": "Impending threat or deadline",
+                            "estimated_words": 1100,
+                        },
+                    ],
+                }
+            )
+
+        elif "task: wizard_propose_bible" in prompt_lower:
+            content = json.dumps(
+                {
+                    "world_setting": "A clockwork realm of vertical spires and floating skiffs.",
+                    "central_conflict": "A forbidden ether engine threatens to unravel the capital.",
+                    "reader_promise": "Clockwork mysteries, high-altitude aerial tension, and hard magic.",
+                    "hook": "An airship mechanist uncovers an impossible chronometer ticking in reverse.",
+                    "magic_tech_rules": [
+                        "Clockwork requires calibrated ether springs to hold kinetic charge.",
+                        "Ether resonance induces vertigo in unshielded organic minds.",
+                        "Chronometric reversal exacts equal heat entropy upon the surrounding room.",
+                    ],
+                    "tone_rules": [
+                        "Keep atmosphere tactile with brass, soot, and whistling valves.",
+                        "Dialogue should remain sharp, technical, and grounded.",
+                    ],
+                }
+            )
+
+        elif "task: wizard_propose_factions" in prompt_lower:
+            content = json.dumps(
+                [
+                    {
+                        "name": "The Gearsmiths Guild",
+                        "goals": "Protect guild monopolies on high-pressure steam turbines.",
+                        "resources": "Master fabricators, patented workshops, and iron automata.",
+                        "alliances": ["Merchant Consortium"],
+                    },
+                    {
+                        "name": "The Cloud Marches",
+                        "goals": "Break the trade embargo and harvest wild ether storms.",
+                        "resources": "Fast airskiffs, storm harpoons, and fearless corsairs.",
+                        "alliances": [],
+                    },
+                ]
+            )
+
+        elif "task: wizard_propose_characters" in prompt_lower:
+            content = json.dumps(
+                [
+                    {
+                        "name": "Vaelin Drake",
+                        "role": "Protagonist",
+                        "archetype": "Underdog Mechanist",
+                        "psych_flaw": "Refuses to ask for help even when overwhelmed.",
+                        "goals": "Repair the grandfather machine and clear his sister's name.",
+                        "aliases": ["The Wrench"],
+                    },
+                    {
+                        "name": "Baroness Irene",
+                        "role": "Antagonist",
+                        "archetype": "Ruthless Industrialist",
+                        "psych_flaw": "Views living souls as expendable cog components.",
+                        "goals": "Complete the sovereign ether spire before winter.",
+                        "aliases": ["The Iron Needle"],
+                    },
+                ]
+            )
+
+        elif "task: wizard_propose_spine" in prompt_lower:
+            content = json.dumps(
+                {
+                    "series_promise": "A 50-chapter saga of skyborne revolution and mechanical gods.",
+                    "ending_direction": "The grand engine ascends into the stratosphere, freeing the colonies.",
+                    "major_milestones": [
+                        {"chapter": 12, "event": "The flagship sabotaged; exile to the lower clouds."},
+                        {"chapter": 25, "event": "Discovery of the ancient pre-fall blueprint."},
+                        {"chapter": 38, "event": "Siege of the Grand Foundry and betrayal."},
+                        {"chapter": 50, "event": "Final flight into the eye of the ether vortex."},
+                    ],
+                }
+            )
+
         elif "task: draft_scene" in prompt_lower:
+
             scene_match = re.search(r"task:\s*draft_scene\s*\(scene\s*(\d+)", prompt_lower)
             scene_num = int(scene_match.group(1)) if scene_match else 1
             if scene_num == 1:

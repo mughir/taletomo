@@ -10,11 +10,13 @@ from taletomo.canon.models import (
     Faction,
     Location,
     PlotThread,
+    ProposedCanonItem,
     StoryEvent,
     TimelineEvent,
     TruthScope,
     WorldRule,
 )
+
 from taletomo.generation.models import DraftArtifact
 from taletomo.planning.models import (
     Arc,
@@ -635,8 +637,19 @@ class ExportService:
                     }
                     for ev in project.story_events.select_related("chapter").all()
                 ],
+                "proposed_items": [
+                    {
+                        "chapter_number": item.chapter.chapter_number,
+                        "kind": item.kind,
+                        "summary": item.summary,
+                        "payload": item.payload,
+                        "status": item.status,
+                    }
+                    for item in ProposedCanonItem.objects.filter(chapter__project=project).select_related("chapter")
+                ],
             },
         }
+
 
         # Calculate payload checksum strictly over payload without manifest
         raw_payload = json.dumps(payload, sort_keys=True)
@@ -933,4 +946,19 @@ class ExportService:
                 canonical_status=f.get("canonical_status", CanonFact.Status.CONFIRMED),
             )
 
+        for p in canon_data.get("proposed_items", []):
+            ch_target = chapter_map.get(p.get("chapter_number"), None)
+            if not ch_target and chapter_map:
+                ch_target = next(iter(chapter_map.values()))
+            if ch_target:
+                ProposedCanonItem.objects.create(
+                    project=project,
+                    chapter=ch_target,
+                    kind=p.get("kind") or p.get("item_type", ProposedCanonItem.Kind.FACT),
+                    summary=p.get("summary", ""),
+                    payload=p.get("payload", {}),
+                    status=p.get("status", ProposedCanonItem.Status.PROPOSED),
+                )
+
         return project
+

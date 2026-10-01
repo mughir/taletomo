@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}Worldbuilding Wizard — {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="page-intro setup-intro">
+  <div>
+    <p class="eyebrow">INTERACTIVE ARCHITECT</p>
+    <h1>Worldbuilding Wizard</h1>
+    <p>Build your story universe step-by-step with AI co-planning for lore, factions, cast, and story spine.</p>
+  </div>
+</section>
+
+<div class="card" style="max-width: 900px; margin: 0 auto 40px;">
+  <!-- Wizard Steps Indicator -->
+  <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--hairline); padding-bottom: 16px; margin-bottom: 24px; overflow-x: auto; gap: 8px;">
+    <div id="step-pill-1" class="badge badge-success" style="padding: 6px 12px;">1. Premise &amp; Axis</div>
+    <div id="step-pill-2" class="badge badge-subtle" style="padding: 6px 12px;">2. World Bible &amp; Rules</div>
+    <div id="step-pill-3" class="badge badge-subtle" style="padding: 6px 12px;">3. Factions &amp; Powers</div>
+    <div id="step-pill-4" class="badge badge-subtle" style="padding: 6px 12px;">4. Cast &amp; Personae</div>
+    <div id="step-pill-5" class="badge badge-subtle" style="padding: 6px 12px;">5. Spine &amp; Initialize</div>
+  </div>
+
+  <form id="wizard-form" method="post" action="{% url 'taletomo:project_wizard' %}">
+    {% csrf_token %}
+    <input type="hidden" name="wizard_payload" id="wizard_payload">
+
+    <!-- STEP 1: Premise & Core Axis -->
+    <div id="step-1" class="wizard-step">
+      <div class="card-header">
+        <h2>Step 1: Premise &amp; Core Vision</h2>
+        <span class="meta-pill">Story Foundation</span>
+      </div>
+      <p class="card-lede">Define your novel's title, central premise, and narrative scope.</p>
+
+      <div class="form-group">
+        <label for="w_title" class="form-label">Working Title</label>
+        <input type="text" id="w_title" class="form-control" placeholder="e.g. Chronicles of the Clockwork Spire" required>
+      </div>
+
+      <div class="form-group">
+        <label for="w_premise" class="form-label">Premise / Core Idea</label>
+        <textarea id="w_premise" class="form-control" rows="4" placeholder="e.g. An airship mechanist uncovers an impossible chronometer ticking backwards, placing him in the crosshairs of the High Inquisitor." required></textarea>
+      </div>
+
+      <div class="field-pair">
+        <div class="form-group">
+          <label for="w_genre" class="form-label">Genre</label>
+          <input type="text" id="w_genre" class="form-control" value="Fantasy / Steampunk">
+        </div>
+        <div class="form-group">
+          <label for="w_tone" class="form-label">Tone &amp; Mood</label>
+          <input type="text" id="w_tone" class="form-control" value="Epic, Mysterious, Gritty">
+        </div>
+      </div>
+
+      <div class="field-pair">
+        <div class="form-group">
+          <label for="w_target_chapters" class="form-label">Target Chapters</label>
+          <input type="number" id="w_target_chapters" class="form-control" value="50" min="1" max="4000">
+        </div>
+        <div class="form-group">
+          <label for="w_protagonist_type" class="form-label">Protagonist Archetype</label>
+          <input type="text" id="w_protagonist_type" class="form-control" value="Underdog Mechanist">
+        </div>
+      </div>
+
+      <div class="form-actions" style="margin-top: 24px; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-primary" onclick="goToStep(2)">Next: World Bible &amp; Rules →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: World Bible & Rules -->
+    <div id="step-2" class="wizard-step" style="display: none;">
+      <div class="card-header">
+        <h2>Step 2: World Bible &amp; Hard Magic/Tech Rules</h2>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_bible')">✨ Generate AI Lore</button>
+      </div>
+      <p class="card-lede">Establish the physical and mystical laws that govern your universe.</p>
+
+      <div class="form-group">
+        <label for="w_world_setting" class="form-label">World Setting Description</label>
+        <textarea id="w_world_setting" class="form-control" rows="3"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="w_central_conflict" class="form-label">Central Conflict</label>
+        <input type="text" id="w_central_conflict" class="form-control">
+      </div>
+
+      <div class="form-group">
+        <label for="w_magic_rules" class="form-label">World / Magic / Tech Constraints (one per line)</label>
+        <textarea id="w_magic_rules" class="form-control" rows="4" placeholder="Rule 1&#10;Rule 2&#10;Rule 3"></textarea>
+      </div>
+
+      <div class="form-actions" style="margin-top: 24px; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-quiet" onclick="goToStep(1)">← Back to Premise</button>
+        <button type="button" class="btn btn-primary" onclick="goToStep(3)">Next: Factions &amp; Powers →</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Factions & Power Dynamics -->
+    <div id="step-3" class="wizard-step" style="display: none;">
+      <div class="card-header">
+        <h2>Step 3: Factions &amp; Rival Powers</h2>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_factions')">✨ Generate AI Factions</button>
+      </div>
+      <p class="card-lede">Organize the conflicting political, military, and spiritual houses.</p>
+
+      <div id="factions-container" class="stack" style="margin-bottom: 20px;">
+        <!-- Dynamic faction cards populated via AI or default -->
+      </div>
+
+      <div class="form-actions" style="margin-top: 24px; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-quiet" onclick="goToStep(2)">← Back to World Bible</button>
+        <button type="button" class="btn btn-primary" onclick="goToStep(4)">Next: Cast &amp; Personae →</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: Dramatis Personae (Cast) -->
+    <div id="step-4" class="wizard-step" style="display: none;">
+      <div class="card-header">
+        <h2>Step 4: Dramatis Personae (Key Cast)</h2>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_characters')">✨ Generate AI Cast</button>
+      </div>
+      <p class="card-lede">Shape the protagonist, antagonist, and pivotal mentors or rivals.</p>
+
+      <div id="characters-container" class="stack" style="margin-bottom: 20px;">
+        <!-- Dynamic character cards populated via AI or default -->
+      </div>
+
+      <div class="form-actions" style="margin-top: 24px; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-quiet" onclick="goToStep(3)">← Back to Factions</button>
+        <button type="button" class="btn btn-primary" onclick="goToStep(5)">Next: Spine &amp; Finalize →</button>
+      </div>
+    </div>
+
+    <!-- STEP 5: Spine & Final Review -->
+    <div id="step-5" class="wizard-step" style="display: none;">
+      <div class="card-header">
+        <h2>Step 5: Series Spine &amp; Final Review</h2>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_spine')">✨ Propose Milestones</button>
+      </div>
+      <p class="card-lede">Review long-term series promises and initialize your novel project.</p>
+
+      <div class="form-group">
+        <label for="w_series_promise" class="form-label">Overarching Series Promise</label>
+        <textarea id="w_series_promise" class="form-control" rows="2"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="w_ending_direction" class="form-label">Target Ending Direction</label>
+        <input type="text" id="w_ending_direction" class="form-control">
+      </div>
+
+      <div class="card" style="background: var(--paper-raised); padding: 16px; margin: 16px 0;">
+        <h3>Milestone Roadblocks</h3>
+        <ul id="milestones-list" style="margin: 8px 0 0 20px; line-height: 1.6;">
+          <li>Chapter 12: Inciting paradigm shift</li>
+          <li>Chapter 25: Point of no return</li>
+          <li>Chapter 38: Dark night of the soul</li>
+          <li>Chapter 50: Climactic resolution</li>
+        </ul>
+      </div>
+
+      <div class="form-actions" style="margin-top: 24px; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-quiet" onclick="goToStep(4)">← Back to Cast</button>
+        <button type="button" class="btn btn-primary btn-cta" onclick="submitWizard()">Initialize World &amp; Begin Writing <span class="btn-cta-chip" aria-hidden="true">✓</span></button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+let currentStep = 1;
+let factionsData = [];
+let charactersData = [];
+let milestonesData = [];
+
+function goToStep(step) {
+  if (step < 1 || step > 5) return;
+  document.getElementById(`step-${currentStep}`).style.display = 'none';
+  document.getElementById(`step-pill-${currentStep}`).className = 'badge badge-subtle';
+
+  currentStep = step;
+  document.getElementById(`step-${currentStep}`).style.display = 'block';
+  document.getElementById(`step-pill-${currentStep}`).className = 'badge badge-success';
+
+  if (step === 2 && !document.getElementById('w_world_setting').value) {
+    fetchAI('propose_bible');
+  } else if (step === 3 && factionsData.length === 0) {
+    fetchAI('propose_factions');
+  } else if (step === 4 && charactersData.length === 0) {
+    fetchAI('propose_characters');
+  } else if (step === 5 && !document.getElementById('w_series_promise').value) {
+    fetchAI('propose_spine');
+  }
+}
+
+async function fetchAI(action) {
+  const payload = {
+    action: action,
+    premise: document.getElementById('w_premise').value || 'A grand journey across an uncharted realm.',
+    genre: document.getElementById('w_genre').value || 'Fantasy',
+    tone: document.getElementById('w_tone').value || 'Epic',
+    target_chapters: parseInt(document.getElementById('w_target_chapters').value || '50'),
+    protagonist_type: document.getElementById('w_protagonist_type').value || 'Underdog',
+    world_setting: document.getElementById('w_world_setting').value || '',
+    factions: factionsData
+  };
+
+  try {
+    const res = await fetch("{% url 'taletomo:project_wizard_api' %}", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (result.status === 'ok') {
+      applyAIData(action, result.data);
+    }
+  } catch (e) {
+    console.error("AI Wizard request failed", e);
+  }
+}
+
+function applyAIData(action, data) {
+  if (action === 'propose_bible') {
+    document.getElementById('w_world_setting').value = data.world_setting || '';
+    document.getElementById('w_central_conflict').value = data.central_conflict || '';
+    document.getElementById('w_magic_rules').value = (data.magic_tech_rules || []).join('\n');
+  } else if (action === 'propose_factions') {
+    factionsData = data;
+    renderFactions();
+  } else if (action === 'propose_characters') {
+    charactersData = data;
+    renderCharacters();
+  } else if (action === 'propose_spine') {
+    document.getElementById('w_series_promise').value = data.series_promise || '';
+    document.getElementById('w_ending_direction').value = data.ending_direction || '';
+    milestonesData = data.major_milestones || [];
+    renderMilestones();
+  }
+}
+
+function renderFactions() {
+  const cont = document.getElementById('factions-container');
+  cont.innerHTML = '';
+  factionsData.forEach((f, idx) => {
+    const card = document.createElement('div');
+    card.className = 'item-card';
+    card.innerHTML = `
+      <div class="item-card-head">
+        <strong>${f.name}</strong>
+      </div>
+      <p class="is-muted cell-note"><strong>Goal:</strong> ${f.goals}</p>
+      <p class="is-muted cell-note"><strong>Resources:</strong> ${f.resources}</p>
+    `;
+    cont.appendChild(card);
+  });
+}
+
+function renderCharacters() {
+  const cont = document.getElementById('characters-container');
+  cont.innerHTML = '';
+  charactersData.forEach((c, idx) => {
+    const card = document.createElement('div');
+    card.className = 'item-card';
+    card.innerHTML = `
+      <div class="item-card-head">
+        <strong>${c.name} (${c.role})</strong>
+        <span class="meta-pill">${c.archetype || 'Archetype'}</span>
+      </div>
+      <p class="is-muted cell-note"><strong>Goals:</strong> ${c.goals}</p>
+      <p class="is-muted cell-note"><strong>Flaw:</strong> ${c.psych_flaw || 'None'}</p>
+    `;
+    cont.appendChild(card);
+  });
+}
+
+function renderMilestones() {
+  const list = document.getElementById('milestones-list');
+  list.innerHTML = '';
+  milestonesData.forEach(m => {
+    const li = document.createElement('li');
+    li.innerText = `Chapter ${m.chapter}: ${m.event}`;
+    list.appendChild(li);
+  });
+}
+
+function submitWizard() {
+  const rules = document.getElementById('w_magic_rules').value
+    .split('\n')
+    .map(r => r.trim())
+    .filter(r => r.length > 0);
+
+  const fullData = {
+    project: {
+      title: document.getElementById('w_title').value || 'Untitled Epic',
+      premise: document.getElementById('w_premise').value,
+      genre: document.getElementById('w_genre').value,
+      tone: document.getElementById('w_tone').value,
+      target_chapters: parseInt(document.getElementById('w_target_chapters').value || '50'),
+      protagonist_type: document.getElementById('w_protagonist_type').value,
+      target_words_per_chapter: 2200
+    },
+    bible: {
+      world_setting: document.getElementById('w_world_setting').value,
+      central_conflict: document.getElementById('w_central_conflict').value,
+      magic_tech_rules: rules
+    },
+    factions: factionsData,
+    characters: charactersData,
+    spine: {
+      series_promise: document.getElementById('w_series_promise').value,
+      ending_direction: document.getElementById('w_ending_direction').value,
+      major_milestones: milestonesData
+    }
+  };
+
+  document.getElementById('wizard_payload').value = JSON.stringify(fullData);
+  document.getElementById('wizard-form').submit();
+}
+</script>
+{% endblock %}
