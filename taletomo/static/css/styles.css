@@ -1118,6 +1118,8 @@ select.form-control { cursor: pointer; }
   background: rgba(253, 252, 246, 0.7);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
   overflow-x: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 .subnav::-webkit-scrollbar { display: none; }

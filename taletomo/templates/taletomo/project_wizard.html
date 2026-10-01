@@ -74,7 +74,7 @@
     <div id="step-2" class="wizard-step" style="display: none;">
       <div class="card-header">
         <h2>Step 2: World Bible &amp; Hard Magic/Tech Rules</h2>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_bible')">✨ Generate AI Lore</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_bible', event)">✨ Generate AI Lore</button>
       </div>
       <p class="card-lede">Establish the physical and mystical laws that govern your universe.</p>
 
@@ -103,7 +103,7 @@
     <div id="step-3" class="wizard-step" style="display: none;">
       <div class="card-header">
         <h2>Step 3: Factions &amp; Rival Powers</h2>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_factions')">✨ Generate AI Factions</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_factions', event)">✨ Generate AI Factions</button>
       </div>
       <p class="card-lede">Organize the conflicting political, military, and spiritual houses.</p>
 
@@ -121,7 +121,7 @@
     <div id="step-4" class="wizard-step" style="display: none;">
       <div class="card-header">
         <h2>Step 4: Dramatis Personae (Key Cast)</h2>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_characters')">✨ Generate AI Cast</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_characters', event)">✨ Generate AI Cast</button>
       </div>
       <p class="card-lede">Shape the protagonist, antagonist, and pivotal mentors or rivals.</p>
 
@@ -139,7 +139,7 @@
     <div id="step-5" class="wizard-step" style="display: none;">
       <div class="card-header">
         <h2>Step 5: Series Spine &amp; Final Review</h2>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_spine')">✨ Propose Milestones</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchAI('propose_spine', event)">✨ Propose Milestones</button>
       </div>
       <p class="card-lede">Review long-term series promises and initialize your novel project.</p>
 
@@ -197,7 +197,14 @@ function goToStep(step) {
   }
 }
 
-async function fetchAI(action) {
+async function fetchAI(action, event) {
+  const triggerBtn = event && event.target ? event.target.closest('button') : null;
+  const originalHtml = triggerBtn ? triggerBtn.innerHTML : '';
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    triggerBtn.innerHTML = '✨ Thinking…';
+  }
+
   const payload = {
     action: action,
     premise: document.getElementById('w_premise').value || 'A grand journey across an uncharted realm.',
@@ -224,6 +231,11 @@ async function fetchAI(action) {
     }
   } catch (e) {
     console.error("AI Wizard request failed", e);
+  } finally {
+    if (triggerBtn) {
+      triggerBtn.disabled = false;
+      triggerBtn.innerHTML = originalHtml;
+    }
   }
 }
 
