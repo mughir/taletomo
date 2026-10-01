@@ -34,7 +34,11 @@
           {% endfor %}
         </div>
       {% else %}
-        <p class="text-muted">No timeline events registered yet.</p>
+        <div class="quiet-empty" style="text-align: center; padding: 36px 16px;">
+          <span style="font-size: 2rem; display: block; margin-bottom: 8px;">⏳</span>
+          <p style="font-weight: 600; margin-bottom: 4px; color: var(--ink);">No timeline events recorded yet</p>
+          <span style="color: var(--ink-soft); font-size: 0.88rem;">Map out chronological eras, backstory milestones, and pivotal historical moments.</span>
+        </div>
       {% endif %}
     </div>
   </div>

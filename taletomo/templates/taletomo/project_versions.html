@@ -70,7 +70,11 @@
           </tr>
         {% empty %}
           <tr>
-            <td colspan="7" class="table-empty">No drafts generated yet.</td>
+            <td colspan="7" class="table-empty" style="text-align: center; padding: 48px 16px;">
+              <span style="font-size: 2rem; display: block; margin-bottom: 8px;">📜</span>
+              <p style="font-weight: 600; margin-bottom: 4px; color: var(--ink);">No chapter draft history recorded yet</p>
+              <span style="color: var(--ink-soft); font-size: 0.88rem;">As you generate and save iterations in the Writing Studio, historical versions will appear here.</span>
+            </td>
           </tr>
         {% endfor %}
       </tbody>

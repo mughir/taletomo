@@ -5,47 +5,144 @@
 {% block content %}
 <header class="page-head">
   <p class="eyebrow-pill">Tomo’s memory</p>
-  <h1>Series bible</h1>
+  <h1>Series Bible &amp; World Lore</h1>
   <p>Canonical worldbuilding, reader promises, tone anchors, and style constraints for {{ project.title }}.</p>
 </header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="bible" %}
 
-<form method="post" class="card">
-  {% csrf_token %}
+<div class="split-grid">
+  <div>
+    <form method="post" class="card" aria-label="Series Bible configuration">
+      {% csrf_token %}
 
-  <div class="form-group">
-    <label for="id_pitch" class="form-label">Series elevator pitch</label>
-    <textarea id="id_pitch" name="pitch" class="form-control" rows="2">{{ bible.pitch }}</textarea>
+      <div class="form-section">
+        <div class="form-section-heading">
+          <span class="section-index">01</span>
+          <div>
+            <h2>The Pitch &amp; Narrative Hook</h2>
+            <p>The core premise and promise that Tomo keeps in mind across all chapters.</p>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="id_pitch" class="form-label">Series elevator pitch</label>
+          <textarea id="id_pitch" name="pitch" class="form-control" rows="2" placeholder="One or two sentences summing up the central premise and high concept.">{{ bible.pitch }}</textarea>
+          <small class="field-note">Guides the macro narrative arc and pacing horizon.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="id_hook" class="form-label">Core narrative hook</label>
+          <input type="text" id="id_hook" name="hook" class="form-control" value="{{ bible.hook }}" placeholder="e.g. A stolen relic that counts down to a skyward extinction">
+        </div>
+
+        <div class="form-group">
+          <label for="id_reader_promise" class="form-label">Reader promise &amp; core tropes</label>
+          <input type="text" id="id_reader_promise" name="reader_promise" class="form-control" value="{{ bible.reader_promise }}" placeholder="e.g. Slow-burn political intrigue, lethal stakes, found family">
+        </div>
+      </div>
+
+      <div class="form-section" style="margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--hairline);">
+        <div class="form-section-heading">
+          <span class="section-index">02</span>
+          <div>
+            <h2>World Lore &amp; Overarching Conflict</h2>
+            <p>The physical laws, societal tensions, and antagonist driving the plot.</p>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="id_central_conflict" class="form-label">Central conflict &amp; overarching antagonist</label>
+          <textarea id="id_central_conflict" name="central_conflict" class="form-control" rows="3" placeholder="Who or what threatens the world, and what will it cost to resolve?">{{ bible.central_conflict }}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="id_world_setting" class="form-label">World setting &amp; magic / tech constraints</label>
+          <textarea id="id_world_setting" name="world_setting" class="form-control" rows="4" placeholder="Describe the environment, technology level, and core supernatural mechanics.">{{ bible.world_setting }}</textarea>
+        </div>
+      </div>
+
+      <div class="form-section" style="margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--hairline);">
+        <div class="form-section-heading">
+          <span class="section-index">03</span>
+          <div>
+            <h2>Voice &amp; Prose Style Guide</h2>
+            <p>Stylistic directives that govern chapter prose generation and Co-Pilot suggestions.</p>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="id_prose_style_guide" class="form-label">Prose voice &amp; style constraints</label>
+          <textarea id="id_prose_style_guide" name="prose_style_guide" class="form-control" rows="3" placeholder="e.g. Sensory descriptions of weather and weight; terse dialogue; avoid modern colloquialisms.">{{ bible.prose_style_guide }}</textarea>
+          <small class="field-note">Draft generation and Co-Pilot automatically reference this guide.</small>
+        </div>
+      </div>
+
+      <div class="form-actions" style="margin-top: 24px;">
+        <button type="submit" class="btn btn-primary btn-cta">Save Tomo’s memory <span class="btn-cta-chip" aria-hidden="true">→</span></button>
+      </div>
+    </form>
   </div>
 
-  <div class="form-group">
-    <label for="id_hook" class="form-label">Core narrative hook</label>
-    <input type="text" id="id_hook" name="hook" class="form-control" value="{{ bible.hook }}">
-  </div>
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Worldbuilding Architecture</h2>
+      </div>
+      <p class="card-lede">
+        Tomo connects your Bible memory with structured tracking systems across the novel:
+      </p>
 
-  <div class="form-group">
-    <label for="id_reader_promise" class="form-label">Reader promise &amp; tropes</label>
-    <input type="text" id="id_reader_promise" name="reader_promise" class="form-control" value="{{ bible.reader_promise }}">
-  </div>
+      <div class="stack" style="gap: 10px;">
+        <a href="{% url 'taletomo:project_characters' project.id %}" class="item-card" style="text-decoration: none; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <strong style="color: var(--ink);">👥 Dramatis Personae</strong>
+            <p style="margin: 0; font-size: 0.82rem; color: var(--ink-soft);">Cast profiles, speech voice, and relationships</p>
+          </div>
+          <span class="btn-cta-chip" aria-hidden="true">→</span>
+        </a>
 
-  <div class="form-group">
-    <label for="id_central_conflict" class="form-label">Central conflict &amp; overarching antagonist</label>
-    <textarea id="id_central_conflict" name="central_conflict" class="form-control" rows="3">{{ bible.central_conflict }}</textarea>
-  </div>
+        <a href="{% url 'taletomo:project_locations' project.id %}" class="item-card is-brass" style="text-decoration: none; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <strong style="color: var(--ink);">🗺️ Locations &amp; Geography</strong>
+            <p style="margin: 0; font-size: 0.82rem; color: var(--ink-soft);">Atmosphere, realm distances, and travel constraints</p>
+          </div>
+          <span class="btn-cta-chip" aria-hidden="true">→</span>
+        </a>
 
-  <div class="form-group">
-    <label for="id_world_setting" class="form-label">World setting &amp; magic / tech constraints</label>
-    <textarea id="id_world_setting" name="world_setting" class="form-control" rows="4">{{ bible.world_setting }}</textarea>
-  </div>
+        <a href="{% url 'taletomo:project_factions' project.id %}" class="item-card" style="text-decoration: none; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <strong style="color: var(--ink);">⚔️ Factions &amp; Powers</strong>
+            <p style="margin: 0; font-size: 0.82rem; color: var(--ink-soft);">Guilds, political houses, and strategic holdings</p>
+          </div>
+          <span class="btn-cta-chip" aria-hidden="true">→</span>
+        </a>
 
-  <div class="form-group">
-    <label for="id_prose_style_guide" class="form-label">Prose voice &amp; style constraints</label>
-    <textarea id="id_prose_style_guide" name="prose_style_guide" class="form-control" rows="3">{{ bible.prose_style_guide }}</textarea>
-  </div>
+        <a href="{% url 'taletomo:project_rules' project.id %}" class="item-card" style="text-decoration: none; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <strong style="color: var(--ink);">📜 Invariant World Rules</strong>
+            <p style="margin: 0; font-size: 0.82rem; color: var(--ink-soft);">Hard limits and forbidden continuity violations</p>
+          </div>
+          <span class="btn-cta-chip" aria-hidden="true">→</span>
+        </a>
 
-  <div class="form-actions">
-    <button type="submit" class="btn btn-primary btn-cta">Save Tomo’s memory <span class="btn-cta-chip" aria-hidden="true">→</span></button>
+        <a href="{% url 'taletomo:project_threads' project.id %}" class="item-card is-brass" style="text-decoration: none; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <strong style="color: var(--ink);">🧶 Plot Threads &amp; Clues</strong>
+            <p style="margin: 0; font-size: 0.82rem; color: var(--ink-soft);">Open promises, debts, and payoff chapter tracking</p>
+          </div>
+          <span class="btn-cta-chip" aria-hidden="true">→</span>
+        </a>
+
+        <a href="{% url 'taletomo:project_timeline' project.id %}" class="item-card" style="text-decoration: none; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <strong style="color: var(--ink);">⏳ Story Chronology</strong>
+            <p style="margin: 0; font-size: 0.82rem; color: var(--ink-soft);">Historical timeline events and milestone ordering</p>
+          </div>
+          <span class="btn-cta-chip" aria-hidden="true">→</span>
+        </a>
+      </div>
+    </div>
   </div>
-</form>
+</div>
 {% endblock %}
