@@ -43,7 +43,7 @@
                     <li>💡 <strong>Co-Pilot:</strong> <code>{{ c.default_copilot_model }}</code></li>
                   </ul>
                 </div>
-                <div style="font-size: 0.85rem; color: var(--color-text-muted, #666);">
+                <div style="font-size: 0.85rem; color: var(--ink-soft);">
                   <strong>Spending Caps:</strong> Daily: ${{ c.daily_cost_limit_usd }} | Monthly: ${{ c.monthly_cost_limit_usd }}
                 </div>
               </div>
@@ -51,9 +51,10 @@
           {% endfor %}
         </div>
       {% else %}
-        <div class="quiet-empty">
-          <p>No custom providers configured yet.</p>
-          <span>The built-in <strong>Deterministic Fake Provider</strong> is active for local offline writing and testing.</span>
+        <div class="quiet-empty" style="text-align: center; padding: 36px 16px;">
+          <span style="font-size: 2rem; display: block; margin-bottom: 8px;">🔌</span>
+          <p style="font-weight: 600; margin-bottom: 4px; color: var(--ink);">No custom providers configured yet</p>
+          <span style="color: var(--ink-soft); font-size: 0.88rem;">The built-in <strong>Deterministic Fake Provider</strong> is active for local offline writing, testing, and zero-cost simulation.</span>
         </div>
       {% endif %}
     </div>
@@ -92,7 +93,7 @@
           <small class="field-note">Encrypted at rest with AES-GCM. Never shown after save.</small>
         </div>
 
-        <fieldset style="border: 1px solid var(--color-border, #ddd); border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem;">
+        <fieldset style="border: 1px solid var(--hairline); border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem;">
           <legend style="font-size: 0.9rem; font-weight: 600; padding: 0 0.5rem;">Task-Specific Model Routing</legend>
           
           <div class="form-group" style="margin-bottom: 0.5rem;">

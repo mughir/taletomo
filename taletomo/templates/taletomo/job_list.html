@@ -34,7 +34,12 @@
               {{ j.status }}
             </span>
           </td>
-          <td class="is-numeric">{{ j.progress_pct }}%</td>
+          <td class="is-numeric">
+            <div>{{ j.progress_pct }}%</div>
+            <div style="background: var(--hairline); height: 4px; border-radius: 2px; overflow: hidden; width: 60px; margin: 3px 0 0 auto;">
+              <div style="background: {% if j.status == 'ready' %}var(--success){% elif j.status == 'failed' %}var(--danger){% else %}var(--primary){% endif %}; height: 100%; width: {{ j.progress_pct }}%;"></div>
+            </div>
+          </td>
           <td class="is-numeric">{{ j.confirmed_tokens }}</td>
           <td class="is-muted">{{ j.created_at|date:"Y-m-d H:i" }}</td>
           <td class="cell-actions">
@@ -43,7 +48,11 @@
         </tr>
       {% empty %}
         <tr>
-          <td colspan="8" class="table-empty">No generation jobs yet.</td>
+          <td colspan="8" class="table-empty" style="text-align: center; padding: 48px 16px;">
+            <span style="font-size: 2rem; display: block; margin-bottom: 8px;">⚙️</span>
+            <p style="font-weight: 600; margin-bottom: 4px; color: var(--ink);">No background generation jobs yet</p>
+            <span style="color: var(--ink-soft); font-size: 0.88rem;">When you batch generate chapters or trigger background runs, their audit trail and progress will appear here.</span>
+          </td>
         </tr>
       {% endfor %}
     </tbody>
