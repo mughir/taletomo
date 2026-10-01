@@ -56,6 +56,10 @@
               <strong>{{ item.payload.subject }}</strong> — {{ item.payload.predicate }}:
               “{{ item.payload.value }}” ({{ item.payload.scope }})
             </p>
+          {% elif item.kind == 'event' %}
+            <p class="item-meta">
+              Event type: <strong>{{ item.payload.event_type }}</strong> — “{{ item.payload.summary }}”
+            </p>
           {% elif item.kind == 'character_update' %}
             <p class="item-meta">
               Update <strong>{{ item.payload.name }}</strong> → {{ item.payload.field }}:

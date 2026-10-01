@@ -64,6 +64,339 @@ class ExportService:
         return "\n".join(lines)
 
     @staticmethod
+    def export_epub(project: Project) -> bytes:
+        """Packages the project manuscript into a valid, standards-compliant EPUB 3 archive."""
+        import io
+        import zipfile
+        from xml.sax.saxutils import escape
+
+        buffer = io.BytesIO()
+        book_id = f"urn:uuid:{project.id}"
+        author_name = project.owner.username if project.owner else "TaleTomo Author"
+        title = escape(project.title or "Untitled Novel")
+        date_str = timezone.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        chapters = list(project.chapters.prefetch_related("drafts").order_by("chapter_number"))
+        active_ids = {ch.active_draft_id for ch in chapters if ch.active_draft_id}
+        active_drafts = (
+            {d.id: d for d in DraftArtifact.objects.filter(id__in=active_ids)}
+            if active_ids
+            else {}
+        )
+
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            # 1. mimetype (first entry, uncompressed)
+            zf.writestr("mimetype", b"application/epub+zip", compress_type=zipfile.ZIP_STORED)
+
+            # 2. META-INF/container.xml
+            container_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n'
+                '  <rootfiles>\n'
+                '    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>\n'
+                '  </rootfiles>\n'
+                '</container>'
+            )
+            zf.writestr("META-INF/container.xml", container_xml)
+
+            # 3. OEBPS/style.css
+            style_css = (
+                "body { font-family: 'Georgia', serif; line-height: 1.6; margin: 5%; color: #1a1a1a; }\n"
+                "h1, h2 { text-align: center; font-weight: normal; margin-top: 1.5em; }\n"
+                "p { text-indent: 1.5em; margin: 0; padding: 0; }\n"
+                "p.no-indent { text-indent: 0; }\n"
+                "hr.scene-break { border: 0; text-align: center; margin: 1.5em 0; }\n"
+                "hr.scene-break:after { content: '* * *'; font-size: 1.1em; color: #555; }\n"
+                ".title-page { text-align: center; margin-top: 25%; }\n"
+                ".subtitle { font-style: italic; color: #555; margin-top: 1em; }\n"
+            )
+            zf.writestr("OEBPS/style.css", style_css)
+
+            # 4. Chapters XHTML
+            manifest_items = [
+                '<item id="style" href="style.css" media-type="text/css"/>',
+                '<item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
+                '<item id="titlepage" href="title.xhtml" media-type="application/xhtml+xml"/>',
+            ]
+            spine_items = [
+                '<itemref idref="titlepage"/>',
+                '<itemref idref="nav"/>',
+            ]
+            nav_points = []
+
+            # Title page
+            title_xhtml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<!DOCTYPE html>\n'
+                '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">\n'
+                f'<head><title>{title}</title><link rel="stylesheet" href="style.css" type="text/css"/></head>\n'
+                '<body>\n'
+                '  <div class="title-page">\n'
+                f'    <h1>{title}</h1>\n'
+                f'    <p class="subtitle">{escape(project.premise or "")}</p>\n'
+                f'    <p class="no-indent" style="margin-top: 3em;">By {escape(author_name)}</p>\n'
+                '  </div>\n'
+                '</body>\n</html>'
+            )
+            zf.writestr("OEBPS/title.xhtml", title_xhtml)
+
+            for ch in chapters:
+                draft = active_drafts.get(ch.active_draft_id)
+                if not draft:
+                    drafts = list(ch.drafts.all())
+                    if drafts:
+                        draft = max(drafts, key=lambda d: d.version_number)
+
+                ch_title = escape(ch.title or f"Chapter {ch.chapter_number}")
+                ch_filename = f"chapter_{ch.chapter_number}.xhtml"
+                item_id = f"ch_{ch.chapter_number}"
+
+                manifest_items.append(f'<item id="{item_id}" href="{ch_filename}" media-type="application/xhtml+xml"/>')
+                spine_items.append(f'<itemref idref="{item_id}"/>')
+                nav_points.append(f'<li><a href="{ch_filename}">{ch_title}</a></li>')
+
+                body_paragraphs = []
+                if draft and draft.prose_content:
+                    for para in draft.prose_content.split("\n\n"):
+                        clean_p = para.strip()
+                        if not clean_p:
+                            continue
+                        if clean_p == "* * *":
+                            body_paragraphs.append('<hr class="scene-break"/>')
+                        else:
+                            body_paragraphs.append(f'<p>{escape(clean_p)}</p>')
+                else:
+                    body_paragraphs.append('<p class="no-indent"><em>(No draft written yet)</em></p>')
+
+                ch_xhtml = (
+                    '<?xml version="1.0" encoding="UTF-8"?>\n'
+                    '<!DOCTYPE html>\n'
+                    '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">\n'
+                    f'<head><title>{ch_title}</title><link rel="stylesheet" href="style.css" type="text/css"/></head>\n'
+                    '<body>\n'
+                    f'  <h2>Chapter {ch.chapter_number}: {ch_title}</h2>\n'
+                    + "\n".join(f"  {p}" for p in body_paragraphs) +
+                    '\n</body>\n</html>'
+                )
+                zf.writestr(f"OEBPS/{ch_filename}", ch_xhtml)
+
+            # 5. OEBPS/toc.xhtml (EPUB 3 Navigation)
+            toc_xhtml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<!DOCTYPE html>\n'
+                '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">\n'
+                '<head><title>Table of Contents</title><link rel="stylesheet" href="style.css" type="text/css"/></head>\n'
+                '<body>\n'
+                '  <nav epub:type="toc" id="toc">\n'
+                '    <h1>Table of Contents</h1>\n'
+                '    <ol>\n'
+                '      <li><a href="title.xhtml">Title Page</a></li>\n'
+                + "\n".join(f"      {p}" for p in nav_points) +
+                '\n    </ol>\n'
+                '  </nav>\n'
+                '</body>\n</html>'
+            )
+            zf.writestr("OEBPS/toc.xhtml", toc_xhtml)
+
+            # 6. OEBPS/content.opf
+            content_opf = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">\n'
+                '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+                f'    <dc:identifier id="BookId">{book_id}</dc:identifier>\n'
+                f'    <dc:title>{title}</dc:title>\n'
+                f'    <dc:creator>{escape(author_name)}</dc:creator>\n'
+                '    <dc:language>en</dc:language>\n'
+                f'    <meta property="dcterms:modified">{date_str}</meta>\n'
+                '  </metadata>\n'
+                '  <manifest>\n'
+                + "\n".join(f"    {m}" for m in manifest_items) +
+                '\n  </manifest>\n'
+                '  <spine>\n'
+                + "\n".join(f"    {s}" for s in spine_items) +
+                '\n  </spine>\n'
+                '</package>'
+            )
+            zf.writestr("OEBPS/content.opf", content_opf)
+
+        return buffer.getvalue()
+
+    @staticmethod
+    def export_docx(project: Project) -> bytes:
+        """Generates a standard manuscript format DOCX file (OpenXML) with title page and double-spaced styling."""
+        import io
+        import zipfile
+        from xml.sax.saxutils import escape
+
+        buffer = io.BytesIO()
+        title = escape(project.title or "Untitled Novel")
+        author_name = escape(project.owner.username if project.owner else "TaleTomo Author")
+
+        chapters = list(project.chapters.prefetch_related("drafts").order_by("chapter_number"))
+        active_ids = {ch.active_draft_id for ch in chapters if ch.active_draft_id}
+        active_drafts = (
+            {d.id: d for d in DraftArtifact.objects.filter(id__in=active_ids)}
+            if active_ids
+            else {}
+        )
+
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            # 1. [Content_Types].xml
+            content_types_xml = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
+                '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n'
+                '  <Default Extension="xml" ContentType="application/xml"/>\n'
+                '  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>\n'
+                '  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>\n'
+                '</Types>'
+            )
+            zf.writestr("[Content_Types].xml", content_types_xml)
+
+            # 2. _rels/.rels
+            rels_xml = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+                '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>\n'
+                '</Relationships>'
+            )
+            zf.writestr("_rels/.rels", rels_xml)
+
+            # 3. word/_rels/document.xml.rels
+            doc_rels_xml = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+                '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\n'
+                '</Relationships>'
+            )
+            zf.writestr("word/_rels/document.xml.rels", doc_rels_xml)
+
+            # 4. word/styles.xml
+            styles_xml = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">\n'
+                '  <w:docDefaults>\n'
+                '    <w:rPrDefault>\n'
+                '      <w:rPr>\n'
+                '        <w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>\n'
+                '        <w:sz w:val="24"/>\n'  # 12pt
+                '      </w:rPr>\n'
+                '    </w:rPrDefault>\n'
+                '    <w:pPrDefault>\n'
+                '      <w:pPr>\n'
+                '        <w:spacing w:line="480" w:lineRule="auto"/>\n'  # Double-spaced
+                '      </w:pPr>\n'
+                '    </w:pPrDefault>\n'
+                '  </w:docDefaults>\n'
+                '</w:styles>'
+            )
+            zf.writestr("word/styles.xml", styles_xml)
+
+            # 5. word/document.xml
+            body_xml_parts = []
+
+            # Title page
+            body_xml_parts.append(
+                f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="36"/></w:rPr><w:t>{title}</w:t></w:r></w:p>'
+                f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>by {author_name}</w:t></w:r></w:p>'
+                f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Genre: {escape(project.genre)} | Tone: {escape(project.tone)}</w:t></w:r></w:p>'
+                '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+            )
+
+            for ch in chapters:
+                draft = active_drafts.get(ch.active_draft_id)
+                if not draft:
+                    drafts = list(ch.drafts.all())
+                    if drafts:
+                        draft = max(drafts, key=lambda d: d.version_number)
+
+                ch_title = escape(ch.title or f"Chapter {ch.chapter_number}")
+                body_xml_parts.append(
+                    f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t>Chapter {ch.chapter_number}: {ch_title}</w:t></w:r></w:p>'
+                )
+
+                if draft and draft.prose_content:
+                    for para in draft.prose_content.split("\n\n"):
+                        clean_p = para.strip()
+                        if not clean_p:
+                            continue
+                        if clean_p == "* * *":
+                            body_xml_parts.append(
+                                '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>#</w:t></w:r></w:p>'
+                            )
+                        else:
+                            body_xml_parts.append(
+                                f'<w:p><w:pPr><w:ind w:firstLine="720"/></w:pPr><w:r><w:t xml:space="preserve">{escape(clean_p)}</w:t></w:r></w:p>'
+                            )
+                else:
+                    body_xml_parts.append(
+                        '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>(No draft written yet)</w:t></w:r></w:p>'
+                    )
+
+                body_xml_parts.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+
+            doc_xml = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">\n'
+                '  <w:body>\n'
+                + "\n".join(f"    {p}" for p in body_xml_parts) +
+                '    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>\n'
+                '  </w:body>\n'
+                '</w:document>'
+            )
+            zf.writestr("word/document.xml", doc_xml)
+
+        return buffer.getvalue()
+
+    @staticmethod
+    def export_webnovel_html(project: Project) -> str:
+        """Formats the manuscript with clean, platform-optimized HTML ready for Royal Road / ScribbleHub."""
+        from xml.sax.saxutils import escape
+
+        chapters = list(project.chapters.prefetch_related("drafts").order_by("chapter_number"))
+        active_ids = {ch.active_draft_id for ch in chapters if ch.active_draft_id}
+        active_drafts = (
+            {d.id: d for d in DraftArtifact.objects.filter(id__in=active_ids)}
+            if active_ids
+            else {}
+        )
+
+        parts = [
+            '<div class="webnovel-manuscript">',
+            f'  <!-- TaleTomo Web-Novel Export: {escape(project.title)} -->',
+            f'  <h1 class="novel-title">{escape(project.title)}</h1>',
+            f'  <p class="novel-premise"><em>{escape(project.premise)}</em></p>',
+            '  <hr class="separator"/>',
+        ]
+
+        for ch in chapters:
+            draft = active_drafts.get(ch.active_draft_id)
+            if not draft:
+                drafts = list(ch.drafts.all())
+                if drafts:
+                    draft = max(drafts, key=lambda d: d.version_number)
+
+            ch_title = escape(ch.title or f"Chapter {ch.chapter_number}")
+            parts.append(f'  <section class="chapter-block" id="chapter-{ch.chapter_number}">')
+            parts.append(f'    <h2>Chapter {ch.chapter_number}: {ch_title}</h2>')
+
+            if draft and draft.prose_content:
+                for para in draft.prose_content.split("\n\n"):
+                    clean = para.strip()
+                    if not clean:
+                        continue
+                    if clean == "* * *":
+                        parts.append('    <p style="text-align: center;"><strong>* * *</strong></p>')
+                    else:
+                        parts.append(f'    <p>{escape(clean)}</p>')
+            else:
+                parts.append('    <p><em>(No draft written yet)</em></p>')
+            parts.append('  </section>\n  <hr class="separator"/>\n')
+
+        parts.append('</div>')
+        return "\n".join(parts)
+
+    @staticmethod
     def export_json_backup(project: Project) -> Dict[str, Any]:
         """Creates a complete, versioned JSON backup with checksum manifest (zero secrets)."""
         bible = getattr(project, "bible", None)

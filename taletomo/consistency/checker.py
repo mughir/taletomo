@@ -96,7 +96,36 @@ def _match_injury_actions(prose_lower: str, injuries: list) -> list:
         ):
             for m in re.finditer(pattern, prose_lower):
                 matched.append(prose_lower[m.start() : m.end()].strip())
-    return matched
+    seen = set()
+    deduped = []
+    for m in matched:
+        if m not in seen:
+            seen.add(m)
+            deduped.append(m)
+    return deduped
+
+
+def _character_name_variants(char: Character) -> list[str]:
+    """Resolves character name variants: full name, first-token (if >= 3 chars), and aliases."""
+    variants = []
+    if char.name and char.name.strip():
+        name_clean = char.name.strip()
+        variants.append(name_clean)
+        first_token = name_clean.split()[0]
+        if len(first_token) >= 3 and first_token.lower() != name_clean.lower():
+            variants.append(first_token)
+    for alias in (char.aliases or []):
+        alias_clean = str(alias).strip()
+        if len(alias_clean) >= 2:
+            variants.append(alias_clean)
+    seen = set()
+    deduped = []
+    for v in variants:
+        low = v.lower()
+        if low not in seen:
+            seen.add(low)
+            deduped.append(v)
+    return deduped
 
 
 def _clean_draft_id(draft_id: Optional[Any]) -> Optional[uuid.UUID]:
@@ -120,10 +149,14 @@ class ContinuityChecker:
         # 1. Dead character check
         dead_characters = Character.objects.filter(project=project, is_alive=False)
         for char in dead_characters:
-            if not char.name or not char.name.strip():
+            variants = _character_name_variants(char)
+            if not variants:
                 continue
-            pattern = rf"\b{re.escape(char.name.lower())}\b"
-            if re.search(pattern, prose_lower):
+            matched = any(
+                re.search(rf"\b{re.escape(v.lower())}\b", prose_lower)
+                for v in variants
+            )
+            if matched:
                 findings.append(
                     ContinuityFinding(
                         project=project,
@@ -142,9 +175,10 @@ class ContinuityChecker:
         # 2. Known injury / impairment check (generalized from wound records)
         injured_characters = Character.objects.filter(project=project).exclude(wounds_status="")
         for char in injured_characters:
-            if not char.name or not char.name.strip():
+            variants = _character_name_variants(char)
+            if not variants:
                 continue
-            if char.name.lower() not in prose_lower:
+            if not any(re.search(rf"\b{re.escape(v.lower())}\b", prose_lower) for v in variants):
                 continue
             injuries = _extract_impaired_limbs(char.wounds_status)
             if not injuries:
@@ -233,10 +267,15 @@ class ContinuityChecker:
         )
         user_prompt = f"TASK: CRITIQUE_CONTINUITY\n\nContract:\n{contract_text}\n\nChapter Draft:\n{prose}\n\nAnalyze continuity and output JSON:"
 
+        critique_model = None
+        if hasattr(adapter, "config") and adapter.config and hasattr(adapter.config, "get_model_for_task"):
+            critique_model = adapter.config.get_model_for_task("critique")
+
         try:
             resp = adapter.generate_text(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
+                model=critique_model,
                 max_tokens=2000,
                 temperature=0.2,
             )
@@ -330,14 +369,20 @@ class ContinuityChecker:
             findings.extend(ai_findings)
 
         if findings:
-            # Deduplicate against open findings for this chapter: repeated
-            # generations or manual re-saves must not pile up identical claims.
+            # Deduplicate against open findings for this chapter and within the findings batch:
+            # repeated generations or manual re-saves must not pile up identical claims.
             existing_claims = set(
                 ContinuityFinding.objects.filter(
                     chapter=chapter, status=FindingStatus.OPEN
                 ).values_list("claim", flat=True)
             )
-            findings = [f for f in findings if f.claim not in existing_claims]
+            seen_claims = set(existing_claims)
+            deduped = []
+            for f in findings:
+                if f.claim not in seen_claims:
+                    seen_claims.add(f.claim)
+                    deduped.append(f)
+            findings = deduped
         if findings:
             ContinuityFinding.objects.bulk_create(findings)
 

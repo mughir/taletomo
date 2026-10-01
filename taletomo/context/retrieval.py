@@ -74,12 +74,24 @@ class ContextAssembler:
         chapter: Chapter,
         model_context_limit: int = 128000,
         requested_output_tokens: int = 4000,
+        query_embedding: Optional[List[float]] = None,
+        adapter: Optional[Any] = None,
     ) -> ContextPackage:
         project = chapter.project
         budget = BudgetCalculator.calculate_budget(
             model_context_limit=model_context_limit,
             requested_output_tokens=requested_output_tokens,
         )
+
+        if query_embedding is None and adapter is not None and hasattr(adapter, "get_embedding"):
+            chapter_plan = getattr(chapter, "plan", None)
+            terms = [chapter.title]
+            if chapter_plan and chapter_plan.objectives:
+                terms.extend(chapter_plan.objectives)
+            try:
+                query_embedding = adapter.get_embedding(" ".join(terms))
+            except Exception:
+                query_embedding = None
 
         source_entries: List[Dict[str, Any]] = []
         category_spent: Dict[str, int] = {
@@ -223,12 +235,53 @@ class ContextAssembler:
                 previous_tail = f"Chapter {prev_prose_chapter.chapter_number} ended with: ...{tail}"
                 recent_entries.append((f"prev-ending-{prev_prose_chapter.id}", previous_tail))
 
-        def ranked(candidates: List, search_of, name_of) -> List[Tuple[Any, int]]:
-            def sort_key(candidate):
-                score = _score_terms(query_terms, *search_of(candidate))
-                return (-score, str(name_of(candidate)).lower())
+        def _cosine_similarity(v1: list, v2: list) -> float:
+            if not v1 or not v2 or len(v1) != len(v2):
+                return 0.0
+            dot = sum(a * b for a, b in zip(v1, v2))
+            norm_a = sum(a * a for a in v1) ** 0.5
+            norm_b = sum(b * b for b in v2) ** 0.5
+            if norm_a == 0.0 or norm_b == 0.0:
+                return 0.0
+            return float(dot / (norm_a * norm_b))
 
-            return [(candidate, -sort_key(candidate)[0]) for candidate in sorted(candidates, key=sort_key)]
+        def ranked(candidates: List, search_of, name_of, get_embedding=None) -> List[Tuple[Any, int]]:
+            if not candidates:
+                return []
+
+            sparse_scores = {c: _score_terms(query_terms, *search_of(c)) for c in candidates}
+            dense_scores = {}
+            if query_embedding:
+                for c in candidates:
+                    emb = getattr(c, "embedding", None) if get_embedding is None else get_embedding(c)
+                    if emb and isinstance(emb, list):
+                        sim = _cosine_similarity(query_embedding, emb)
+                        if sim > 0.0:
+                            dense_scores[c] = sim
+
+            sparse_ranked = sorted(candidates, key=lambda c: (-sparse_scores.get(c, 0), str(name_of(c)).lower()))
+            sparse_ranks = {c: r for r, c in enumerate(sparse_ranked, 1)}
+
+            dense_ranks = {}
+            if dense_scores:
+                dense_ranked = sorted(dense_scores.keys(), key=lambda c: (-dense_scores[c], str(name_of(c)).lower()))
+                dense_ranks = {c: r for r, c in enumerate(dense_ranked, 1)}
+
+            def sort_key(c):
+                s_score = sparse_scores.get(c, 0)
+                if dense_scores:
+                    r_s = sparse_ranks.get(c, len(candidates) + 1)
+                    rrf = 1.0 / (60.0 + r_s)
+                    if c in dense_ranks:
+                        rrf += 1.0 / (60.0 + dense_ranks[c])
+                    return (-rrf, str(name_of(c)).lower())
+                return (-s_score, str(name_of(c)).lower())
+
+            sorted_candidates = sorted(candidates, key=sort_key)
+            return [
+                (c, sparse_scores.get(c, 0) + int(dense_scores.get(c, 0.0) * 10))
+                for c in sorted_candidates
+            ]
 
         # 4. Canonical Story State & Entities (relevance-ranked, budget-gated)
         state_parts = []
@@ -237,6 +290,7 @@ class ContextAssembler:
             list(Character.objects.filter(project=project)[: CANDIDATE_CAPS["characters"]]),
             lambda c: [c.name, *c.aliases, c.role, c.goals, *c.traits, c.wounds_status, c.internal_need],
             lambda c: c.name,
+            get_embedding=lambda c: getattr(c, "embedding", None),
         )
         for char, score in characters:
             char_desc = f"Character: {char.name} ({char.role}). Status: {'Alive' if char.is_alive else 'Dead'}."
@@ -253,6 +307,7 @@ class ContextAssembler:
             list(Location.objects.filter(project=project)[: CANDIDATE_CAPS["locations"]]),
             lambda loc: [loc.name, loc.description, loc.travel_rules, loc.current_state],
             lambda loc: loc.name,
+            get_embedding=lambda loc: getattr(loc, "embedding", None),
         )
         for loc, score in locations:
             loc_desc = f"Location: {loc.name}. Description: {loc.description}."
@@ -304,7 +359,7 @@ class ContextAssembler:
         state_text = "\n".join(state_parts)
 
         # 5. Retrieved Older Evidence (ranked, recency-tiebroken, Anti-Leakage filtered)
-        fact_candidates: List[Tuple[CanonFact, int, int]] = []
+        fact_candidates: List[Tuple[CanonFact, int]] = []
         for fact in CanonFact.objects.filter(
             project=project,
             canonical_status=CanonFact.Status.CONFIRMED,
@@ -320,15 +375,21 @@ class ContextAssembler:
                 ):
                     continue  # Anti-leakage: exclude future fact!
 
-            score = _score_terms(query_terms, fact.subject, fact.predicate, fact.value)
-            fact_candidates.append((fact, score, provenance_chapter))
+            fact_candidates.append((fact, provenance_chapter))
 
-        # Recent facts first among equals: they are most likely to still bind
-        # the current scene.
-        fact_candidates.sort(key=lambda item: (-item[1], -item[2]))
+        prov_map = {f.id: prov for f, prov in fact_candidates}
+        ranked_facts = ranked(
+            [f for f, _ in fact_candidates],
+            lambda f: [f.subject, f.predicate, f.value],
+            lambda f: f.subject,
+            get_embedding=lambda f: getattr(f, "embedding", None),
+        )
+
+        # Recent facts first among equals: they are most likely to still bind the current scene.
+        ranked_facts.sort(key=lambda item: (-item[1], -prov_map.get(item[0].id, -1)))
 
         retrieval_parts = []
-        for fact, score, _prov_ch in fact_candidates:
+        for fact, score in ranked_facts:
             fact_line = f"Canon Fact: {fact.subject} {fact.predicate} '{fact.value}' ({fact.truth_scope})"
             if record_entry(str(fact.id), "retrieval", fact_line, priority=3, score=score):
                 retrieval_parts.append(fact_line)

@@ -11,29 +11,81 @@
 
 {% include "taletomo/_project_subnav.html" with active_tab="export" %}
 
-<div class="duo-grid">
+<div class="section-heading">
+  <h2>Publishing &amp; Reader Formats</h2>
+  <span class="meta-pill">Publish-ready manuscripts</span>
+</div>
+
+<div class="duo-grid" style="margin-bottom: 32px;">
   <div class="card">
     <div class="card-header">
-      <h2>Manuscript Markdown (.md)</h2>
+      <h2>EPUB 3 E-Book (.epub)</h2>
+      <span class="badge badge-success">Reader Ready</span>
     </div>
     <p class="card-lede">
-      Exports all drafted and approved chapters formatted cleanly as a continuous Markdown document, suitable for external editors or web-novel distribution platforms.
+      Valid, standards-compliant EPUB 3 archive complete with navigation document (XHTML Table of Contents), styled typography, title page, and chapter metadata. Ready for Apple Books, Kindle Previewer, and Kobo.
     </p>
-    <a href="{% url 'taletomo:project_export_markdown' project.id %}" class="btn btn-primary btn-cta">
-      Download Markdown <span class="btn-cta-chip" aria-hidden="true">↓</span>
+    <a href="{% url 'taletomo:project_export_epub' project.id %}" class="btn btn-primary btn-cta">
+      Download EPUB 3 <span class="btn-cta-chip" aria-hidden="true">↓</span>
     </a>
   </div>
 
   <div class="card">
     <div class="card-header">
-      <h2>Structured JSON backup (.json)</h2>
+      <h2>Standard Manuscript DOCX (.docx)</h2>
+      <span class="badge badge-info">Submission Format</span>
     </div>
     <p class="card-lede">
-      Exports the complete project state: Bible, Spine, Volumes, Arcs, Chapters, Contracts, Drafts, Characters, Locations, Rules, Facts, and SHA-256 manifest checksums. (Zero provider secrets are included).
+      Industry-standard manuscript formatting in Microsoft Word format: 12pt Times New Roman, double-spaced body, 1-inch margins, title page metadata, chapter page breaks, and centered scene break hashes.
     </p>
-    <a href="{% url 'taletomo:project_export_json' project.id %}" class="btn btn-secondary btn-cta">
-      Download JSON backup <span class="btn-cta-chip" aria-hidden="true">↓</span>
+    <a href="{% url 'taletomo:project_export_docx' project.id %}" class="btn btn-primary btn-cta">
+      Download Word DOCX <span class="btn-cta-chip" aria-hidden="true">↓</span>
+    </a>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Web-Novel Platform HTML (.html)</h2>
+      <span class="badge badge-accent">Web Serialization</span>
+    </div>
+    <p class="card-lede">
+      Clean, semantic HTML markup optimized for copying or uploading to web serialization platforms such as Royal Road, ScribbleHub, and personal websites with structured chapter wrappers and styled breaks.
+    </p>
+    <a href="{% url 'taletomo:project_export_webnovel' project.id %}" class="btn btn-primary btn-cta">
+      Download Web-Novel HTML <span class="btn-cta-chip" aria-hidden="true">↓</span>
+    </a>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Manuscript Markdown (.md)</h2>
+      <span class="badge">Plain Text</span>
+    </div>
+    <p class="card-lede">
+      Exports all drafted and approved chapters formatted cleanly as a continuous Markdown document, suitable for external editors like Obsidian, Typora, or Git-based version control workflows.
+    </p>
+    <a href="{% url 'taletomo:project_export_markdown' project.id %}" class="btn btn-secondary btn-cta">
+      Download Markdown <span class="btn-cta-chip" aria-hidden="true">↓</span>
     </a>
   </div>
 </div>
+
+<div class="section-heading">
+  <h2>Project Archive &amp; Recovery</h2>
+  <span class="meta-pill">Lossless Canon Snapshot</span>
+</div>
+
+<div class="card" style="max-width: 680px;">
+  <div class="card-header">
+    <h2>Structured JSON backup (.json)</h2>
+    <span class="badge badge-warning">Zero-Secret Vault</span>
+  </div>
+  <p class="card-lede">
+    Exports the complete project state: Bible, Spine, Volumes, Arcs, Chapters, Contracts, Drafts, Characters, Locations, Rules, Facts, and SHA-256 manifest checksums. (Zero provider secrets are included).
+  </p>
+  <a href="{% url 'taletomo:project_export_json' project.id %}" class="btn btn-secondary btn-cta">
+    Download JSON backup <span class="btn-cta-chip" aria-hidden="true">↓</span>
+  </a>
+</div>
+
 {% endblock %}
