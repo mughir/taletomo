@@ -34,8 +34,8 @@ EXTRACTION_SYSTEM_PROMPT = (
     "'threads_updated' is a list of {thread_title, operation, note} where operation is one of: "
     "open, advance, reinforce, close, abandon. "
     "'character_updates' is a list of {name, field, value, note} where field is one of: "
-    "wounds_status, is_alive, goals. Only include a character update when the prose explicitly "
-    "establishes it (a new wound, a death, a resurrection, a stated goal change); use value "
+    "wounds_status, is_alive, goals, appearance. Only include a character update when the prose explicitly "
+    "establishes it (a new wound, a death, a resurrection, a stated goal change, or an altered appearance); use value "
     "'alive' or 'dead' for is_alive. "
     "Only include what the prose actually establishes. If nothing is found for a key, use an empty list."
 )

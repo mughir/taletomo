@@ -71,8 +71,8 @@ class CanonService:
         project: Project,
         chapter: Chapter,
         expected_head: str,
-        events: List[Dict[str, Any]],
-        facts: List[Dict[str, Any]],
+        events: Optional[List[Dict[str, Any]]] = None,
+        facts: Optional[List[Dict[str, Any]]] = None,
         actor=None,
         override_blockers: bool = False,
         override_rationale: str = "",
@@ -130,7 +130,7 @@ class CanonService:
                 raise ValueError("A non-empty rationale is required to override open blockers.")
 
         # 2. Append Story Events
-        for ev in events:
+        for ev in (events or []):
             StoryEvent.objects.create(
                 project=current_project,
                 chapter=chapter,
@@ -140,7 +140,7 @@ class CanonService:
             )
 
         # 3. Create or Confirm Canon Facts
-        for f in facts:
+        for f in (facts or []):
             CanonFact.objects.create(
                 project=current_project,
                 subject=f.get("subject", ""),
@@ -196,10 +196,17 @@ class CanonService:
                 if parsed is None:
                     continue
                 character.is_alive = parsed
-            elif field == "wounds_status" and value:
-                character.wounds_status = str(value)[:2000]
-            elif field == "goals" and value:
+            elif field == "wounds_status":
+                cleaned = str(value or "").strip().lower()
+                character.wounds_status = (
+                    ""
+                    if cleaned in ("none", "healed", "cured", "healthy", "normal", "uninjured", "no wounds", "nil", "n/a", "")
+                    else str(value)[:2000]
+                )
+            elif field == "goals" and value is not None:
                 character.goals = str(value)[:2000]
+            elif field == "appearance" and value is not None:
+                character.appearance = str(value)[:2000]
             else:
                 continue
             character.save(update_fields=[field, "updated_at"])

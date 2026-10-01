@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 from taletomo.core.models import UUIDModel
 from taletomo.generation.models import DraftArtifact
@@ -85,6 +86,17 @@ class Character(UUIDModel):
                 deduped.append(v)
         return deduped
 
+    def clean(self):
+        super().clean()
+        if self.wounds_status:
+            cleaned = self.wounds_status.strip().lower()
+            if cleaned in ("none", "healed", "cured", "healthy", "normal", "uninjured", "no wounds", "nil", "n/a"):
+                self.wounds_status = ""
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
 
 class CharacterRelationship(UUIDModel):
     """Dynamic relationship, interpersonal history, and social tension between two characters."""
@@ -121,6 +133,19 @@ class CharacterRelationship(UUIDModel):
 
     def __str__(self):
         return f"{self.source_character.name} -> {self.relationship_type} -> {self.target_character.name}"
+
+    def clean(self):
+        super().clean()
+        if (
+            self.source_character_id
+            and self.target_character_id
+            and self.source_character_id == self.target_character_id
+        ):
+            raise ValidationError("A character cannot have a relationship with themselves.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
 
 class Location(UUIDModel):
@@ -374,7 +399,7 @@ class ProposedCanonItem(UUIDModel):
 
     # Fields a character update may legally touch: the ones the continuity
     # checker and context assembly actually consume.
-    APPLICABLE_CHARACTER_FIELDS = ("wounds_status", "is_alive", "goals")
+    APPLICABLE_CHARACTER_FIELDS = ("wounds_status", "is_alive", "goals", "appearance")
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="proposed_canon_items")
     chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name="proposed_canon_items")

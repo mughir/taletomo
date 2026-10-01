@@ -1,11 +1,13 @@
 import pytest
+from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 
-from taletomo.canon.models import Character, Item, Location
+from taletomo.canon.models import Character, CharacterRelationship, Item, Location
+from taletomo.canon.services import CanonService
 from taletomo.consistency.checker import ContinuityChecker, FindingCategory, FindingSeverity
 from taletomo.context.retrieval import ContextAssembler
 from taletomo.exporting.services import ExportService
-from taletomo.generation.models import GenerationJob
+from taletomo.generation.models import DraftArtifact, DraftStatus, GenerationJob
 from taletomo.generation.pipeline import GenerationPipeline
 from taletomo.planning.models import Chapter, ChapterPlan, Project, ScenePlan
 from taletomo.planning.services import PlanningService
@@ -256,4 +258,125 @@ def test_pipeline_multi_scene_checks_composite_prose(audit_fixture):
     f = findings.first()
     assert f.severity == FindingSeverity.BLOCKER
     assert "both hands" in f.claim.lower()
+
+
+@pytest.mark.django_db
+def test_wounds_clearing_and_appearance_commit(audit_fixture):
+    """Verify that approving a wound heal clears wounds_status and appearance updates are applied."""
+    project, ch1, _, _, user, _ = audit_fixture
+
+    char = Character.objects.create(
+        project=project,
+        name="Lyra Valkyrie",
+        wounds_status="Fractured left collarbone and deep laceration",
+        appearance="Silver braided hair and battle tunic",
+    )
+
+    # Prepare ch1 draft and approval preconditions
+    draft1 = DraftArtifact.objects.create(
+        chapter=ch1,
+        version_number=1,
+        prose_content="Lyra rested her wounds in the chapel.",
+        word_count=7,
+        status=DraftStatus.ACCEPTED,
+    )
+    ch1.active_draft_id = draft1.id
+    ch1.status = Chapter.Status.APPROVED
+    ch1.save(update_fields=["active_draft_id", "status"])
+
+    # 1. Update appearance and clear wounds via "healed"
+    CanonService.commit_chapter_canon(
+        project=project,
+        chapter=ch1,
+        expected_head=project.active_branch_head,
+        actor=user,
+        character_updates=[
+            {"name": "Lyra Valkyrie", "field": "wounds_status", "value": "healed"},
+            {"name": "Lyra Valkyrie", "field": "appearance", "value": "Silver hair with obsidian circlet"},
+        ],
+    )
+
+    char.refresh_from_db()
+    assert char.wounds_status == ""
+    assert char.appearance == "Silver hair with obsidian circlet"
+
+    # 2. Applying new wound updates it correctly
+    ch2 = project.chapters.get(chapter_number=2)
+    draft2 = DraftArtifact.objects.create(
+        chapter=ch2,
+        version_number=1,
+        prose_content="Lyra stepped into the dragon's lair.",
+        word_count=7,
+        status=DraftStatus.ACCEPTED,
+    )
+    ch2.active_draft_id = draft2.id
+    ch2.status = Chapter.Status.APPROVED
+    ch2.save(update_fields=["active_draft_id", "status"])
+    ch2.plan.status = ChapterPlan.Status.APPROVED
+    ch2.plan.save(update_fields=["status"])
+
+    project.refresh_from_db()
+    CanonService.commit_chapter_canon(
+        project=project,
+        chapter=ch2,
+        expected_head=project.active_branch_head,
+        actor=user,
+        character_updates=[
+            {"name": "Lyra Valkyrie", "field": "wounds_status", "value": "Burn on right shoulder"},
+        ],
+    )
+    char.refresh_from_db()
+    assert char.wounds_status == "Burn on right shoulder"
+
+    # 3. Direct model normalization: saving "None" or "cured" resets wounds_status to ""
+    char.wounds_status = "none"
+    char.save()
+    assert char.wounds_status == ""
+
+
+@pytest.mark.django_db
+def test_character_relationship_prevents_self_reference(audit_fixture):
+    """Verify that CharacterRelationship rejects self-referential relationships."""
+    project, _, _, _, _, _ = audit_fixture
+
+    hero = Character.objects.create(project=project, name="Rowan")
+
+    with pytest.raises(ValidationError) as exc_info:
+        CharacterRelationship.objects.create(
+            project=project,
+            source_character=hero,
+            target_character=hero,
+            relationship_type="Self Reflection",
+        )
+    assert "themselves" in str(exc_info.value)
+
+
+@pytest.mark.django_db
+def test_branching_relationship_idempotency(audit_fixture):
+    """Verify that branching safely and idempotently clones character relationships."""
+    project, ch1, _, _, _, _ = audit_fixture
+
+    char1 = Character.objects.create(project=project, name="Kael")
+    char2 = Character.objects.create(project=project, name="Vanya")
+
+    CharacterRelationship.objects.create(
+        project=project,
+        source_character=char1,
+        target_character=char2,
+        relationship_type="Comrades",
+        dynamic_status=CharacterRelationship.DynamicStatus.FRIENDLY,
+    )
+
+    branched = PlanningService.branch_project(
+        source_project=project,
+        from_chapter=1,
+        branch_name="Forked Comrades Timeline",
+    )
+
+    assert branched.character_relationships.count() == 1
+    rel = branched.character_relationships.first()
+    assert rel.relationship_type == "Comrades"
+    assert rel.source_character.name == "Kael"
+    assert rel.target_character.name == "Vanya"
+
 
