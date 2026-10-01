@@ -93,18 +93,66 @@
     <main class="writer-main" aria-label="Chapter manuscript and review">
       <section class="writing-surface" aria-label="Manuscript editor">
         <div class="writing-toolbar">
-          <div>
-            <p class="rail-label">MANUSCRIPT</p>
-            <span class="draft-label">{% if active_draft %}Draft · Version {{ active_draft.version_number }}{% else %}New draft{% endif %}</span>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div>
+              <p class="rail-label">MANUSCRIPT</p>
+              <span class="draft-label">{% if active_draft %}Draft · Version {{ active_draft.version_number }}{% else %}New draft{% endif %}</span>
+            </div>
+            <span id="save-status-pill" class="badge badge-subtle" style="font-size: 0.72rem; margin-top: 8px;">All saved</span>
           </div>
-          <form method="post" id="manuscript-editor">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-secondary btn-sm" {% if chapter.status == 'locked' %}disabled{% endif %}>Save a new version</button>
-          </form>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" class="btn btn-quiet btn-sm" id="btn-zen-mode" onclick="toggleZenMode()" title="Toggle distraction-free Zen writing mode (Escape to exit)">
+              🧘 Zen Focus
+            </button>
+            <form method="post" id="manuscript-editor">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-secondary btn-sm" {% if chapter.status == 'locked' %}disabled{% endif %}>Save a new version</button>
+            </form>
+          </div>
         </div>
 
-        <!-- Tomo Co-Pilot Writing Bar -->
         <style>
+          /* Zen Focus Mode */
+          body.zen-mode-active {
+            background-color: var(--paper-raised) !important;
+          }
+          body.zen-mode-active .site-header,
+          body.zen-mode-active .writer-header,
+          body.zen-mode-active .writer-rail,
+          body.zen-mode-active .approval-panel,
+          body.zen-mode-active .writer-blocker,
+          body.zen-mode-active .copilot-bar,
+          body.zen-mode-active .writing-footer {
+            display: none !important;
+          }
+          body.zen-mode-active .writer-layout {
+            display: block !important;
+            max-width: 860px !important;
+            margin: 40px auto !important;
+            padding: 0 20px;
+          }
+          body.zen-mode-active .writing-surface {
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+          }
+          body.zen-mode-active .manuscript-textarea {
+            min-height: 80vh !important;
+            font-size: 1.25rem !important;
+            line-height: 1.85 !important;
+            font-family: var(--font-display), Georgia, serif !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+          }
+          body.zen-mode-active .writing-toolbar {
+            border-bottom: 1px solid var(--hairline-soft) !important;
+            padding-bottom: 12px;
+            margin-bottom: 24px;
+          }
+
+          /* Tomo Co-Pilot Writing Bar */
           .copilot-diff-del {
             background-color: var(--danger-bg);
             color: var(--danger);
@@ -499,7 +547,47 @@ function switchInspectorTab(tabName) {
   }
 }
 
+let isZenMode = false;
+function toggleZenMode() {
+  isZenMode = !isZenMode;
+  const btn = document.getElementById('btn-zen-mode');
+  if (isZenMode) {
+    document.body.classList.add('zen-mode-active');
+    if (btn) btn.innerHTML = '✕ Exit Zen (Esc)';
+  } else {
+    document.body.classList.remove('zen-mode-active');
+    if (btn) btn.innerHTML = '🧘 Zen Focus';
+  }
+}
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && isZenMode) {
+    toggleZenMode();
+  }
+});
+
 document.addEventListener("DOMContentLoaded", function() {
+  const textarea = document.getElementById("prose-textarea");
+  const wcDisplay = document.getElementById("word-count-display");
+  const savePill = document.getElementById("save-status-pill");
+
+  function updateWordCount() {
+    if (!textarea) return;
+    const text = textarea.value.trim();
+    const count = text ? text.split(/\s+/).length : 0;
+    if (wcDisplay) wcDisplay.textContent = count.toLocaleString() + " words";
+  }
+
+  if (textarea) {
+    textarea.addEventListener("input", function() {
+      updateWordCount();
+      if (savePill) {
+        savePill.className = "badge badge-warning";
+        savePill.textContent = "● Unsaved edits";
+      }
+    });
+    updateWordCount();
+  }
+
   const instInput = document.getElementById("copilot-instruction");
   if (instInput) {
     instInput.addEventListener("keydown", function(e) {
