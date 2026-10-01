@@ -23,6 +23,9 @@ def compute_cosine_similarity(v1: list[float], v2: list[float]) -> float:
     return float(dot / (norm_a * norm_b))
 
 
+_cosine_similarity = compute_cosine_similarity
+
+
 class Character(UUIDModel):
     """Structured character record with wounds, abilities, and internal beliefs."""
 
@@ -53,6 +56,28 @@ class Character(UUIDModel):
 
     def __str__(self):
         return f"{self.name} ({self.get_role_display()})"
+
+    def get_name_variants(self) -> list[str]:
+        """Resolves character name variants: full name, first-token (if >= 3 chars), and aliases."""
+        variants: list[str] = []
+        if self.name and self.name.strip():
+            name_clean = self.name.strip()
+            variants.append(name_clean)
+            first_token = name_clean.split()[0]
+            if len(first_token) >= 3 and first_token.lower() != name_clean.lower():
+                variants.append(first_token)
+        for alias in (self.aliases or []):
+            alias_clean = str(alias).strip()
+            if len(alias_clean) >= 2:
+                variants.append(alias_clean)
+        seen = set()
+        deduped: list[str] = []
+        for v in variants:
+            low = v.lower()
+            if low not in seen:
+                seen.add(low)
+                deduped.append(v)
+        return deduped
 
 
 class Location(UUIDModel):
@@ -333,24 +358,14 @@ class ProposedCanonItem(UUIDModel):
 
 
 def find_project_character(project, name: str):
-    """Resolves a cast member by name: exact, alias, or first-token match (case-insensitive).
-
-    Prose usually refers to characters by first name ("Alaric" for
-    "Alaric Vance"), so first-token matching keeps extraction proposals
-    anchored to real records instead of inventing near-duplicates.
-    """
+    """Resolves a cast member by name: exact, alias, or first-token match (case-insensitive)."""
     if not name or not str(name).strip():
         return None
     candidate = str(name).strip().lower()
     if len(candidate) < 3:
         return None
     for char in project.characters.all():
-        names = {char.name.lower(), *(str(alias).lower() for alias in (char.aliases or []))}
-        if candidate in names:
-            return char
-    for char in project.characters.all():
-        first_token = str(char.name).split()[0].lower() if char.name else ""
-        if first_token and candidate == first_token:
+        if candidate in (v.lower() for v in char.get_name_variants()):
             return char
     return None
 

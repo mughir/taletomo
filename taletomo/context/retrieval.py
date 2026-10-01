@@ -3,7 +3,17 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
-from taletomo.canon.models import CanonFact, Character, Faction, Item, Location, PlotThread, TruthScope, WorldRule
+from taletomo.canon.models import (
+    CanonFact,
+    Character,
+    Faction,
+    Item,
+    Location,
+    PlotThread,
+    TruthScope,
+    WorldRule,
+    compute_cosine_similarity,
+)
 from taletomo.context.budget import BudgetCalculator, TokenBudget
 from taletomo.context.models import ContextManifest
 from taletomo.generation.models import DraftArtifact
@@ -51,6 +61,97 @@ def _score_terms(terms: set, *texts: Any) -> int:
     return sum(1 for term in terms if term in blob)
 
 
+class ContextBudgetTracker:
+    """Tracks token spending per category and ensures mandatory budget invariants are strictly respected."""
+
+    def __init__(self, budget: TokenBudget, model_context_limit: int):
+        self.budget = budget
+        self.model_context_limit = model_context_limit
+        self.category_spent: Dict[str, int] = {
+            "constraints": 0,
+            "contract": 0,
+            "state": 0,
+            "retrieval": 0,
+            "recent_context": 0,
+        }
+        self.source_entries: List[Dict[str, Any]] = []
+
+    def record_entry(
+        self, entry_id: str, category: str, content: str, priority: int = 1, score: int = 0
+    ) -> Optional[str]:
+        tokens = BudgetCalculator.estimate_tokens(content)
+        cat_limit = self.budget.category_budgets.get(category, self.budget.usable_input)
+
+        if self.category_spent.get(category, 0) + tokens > cat_limit:
+            if category in ("constraints", "contract"):
+                raise ValueError(
+                    f"Mandatory category '{category}' ({self.category_spent.get(category, 0) + tokens} tokens) "
+                    f"exceeds category budget ({cat_limit} tokens). Model limit is {self.model_context_limit}."
+                )
+            return None
+
+        self.category_spent[category] = self.category_spent.get(category, 0) + tokens
+        h = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+        self.source_entries.append(
+            {
+                "id": entry_id,
+                "category": category,
+                "tokens": tokens,
+                "priority": priority,
+                "score": score,
+                "hash": h,
+            }
+        )
+        return content
+
+
+def rank_candidate_entities(
+    candidates: List[Any],
+    search_of: Any,
+    name_of: Any,
+    query_terms: set,
+    query_embedding: Optional[List[float]] = None,
+    get_embedding: Optional[Any] = None,
+) -> List[Tuple[Any, int]]:
+    """Hybrid sparse + dense entity ranking with Reciprocal Rank Fusion."""
+    if not candidates:
+        return []
+
+    sparse_scores = {c: _score_terms(query_terms, *search_of(c)) for c in candidates}
+    dense_scores = {}
+    if query_embedding:
+        for c in candidates:
+            emb = getattr(c, "embedding", None) if get_embedding is None else get_embedding(c)
+            if emb and isinstance(emb, list):
+                sim = compute_cosine_similarity(query_embedding, emb)
+                if sim > 0.0:
+                    dense_scores[c] = sim
+
+    sparse_ranked = sorted(candidates, key=lambda c: (-sparse_scores.get(c, 0), str(name_of(c)).lower()))
+    sparse_ranks = {c: r for r, c in enumerate(sparse_ranked, 1)}
+
+    dense_ranks = {}
+    if dense_scores:
+        dense_ranked = sorted(dense_scores.keys(), key=lambda c: (-dense_scores[c], str(name_of(c)).lower()))
+        dense_ranks = {c: r for r, c in enumerate(dense_ranked, 1)}
+
+    def sort_key(c):
+        s_score = sparse_scores.get(c, 0)
+        if dense_scores:
+            r_s = sparse_ranks.get(c, len(candidates) + 1)
+            rrf = 1.0 / (60.0 + r_s)
+            if c in dense_ranks:
+                rrf += 1.0 / (60.0 + dense_ranks[c])
+            return (-rrf, str(name_of(c)).lower())
+        return (-s_score, str(name_of(c)).lower())
+
+    sorted_candidates = sorted(candidates, key=sort_key)
+    return [
+        (c, sparse_scores.get(c, 0) + int(dense_scores.get(c, 0.0) * 10))
+        for c in sorted_candidates
+    ]
+
+
 @dataclass
 class ContextPackage:
     system_prompt: str
@@ -94,40 +195,8 @@ class ContextAssembler:
             except Exception:
                 query_embedding = None
 
-        source_entries: List[Dict[str, Any]] = []
-        category_spent: Dict[str, int] = {
-            "constraints": 0,
-            "contract": 0,
-            "state": 0,
-            "retrieval": 0,
-            "recent_context": 0,
-        }
-
-        def record_entry(entry_id: str, category: str, content: str, priority: int = 1, score: int = 0) -> Optional[str]:
-            tokens = BudgetCalculator.estimate_tokens(content)
-            cat_limit = budget.category_budgets.get(category, budget.usable_input)
-
-            if category_spent.get(category, 0) + tokens > cat_limit:
-                if category in ("constraints", "contract"):
-                    raise ValueError(
-                        f"Mandatory category '{category}' ({category_spent.get(category, 0) + tokens} tokens) "
-                        f"exceeds category budget ({cat_limit} tokens). Model limit is {model_context_limit}."
-                    )
-                return None
-
-            category_spent[category] = category_spent.get(category, 0) + tokens
-            h = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
-            source_entries.append(
-                {
-                    "id": entry_id,
-                    "category": category,
-                    "tokens": tokens,
-                    "priority": priority,
-                    "score": score,
-                    "hash": h,
-                }
-            )
-            return content
+        tracker = ContextBudgetTracker(budget=budget, model_context_limit=model_context_limit)
+        record_entry = tracker.record_entry
 
         # 1. Constraints & Bible
         bible = getattr(project, "bible", None)
@@ -236,58 +305,20 @@ class ContextAssembler:
                 previous_tail = f"Chapter {prev_prose_chapter.chapter_number} ended with: ...{tail}"
                 recent_entries.append((f"prev-ending-{prev_prose_chapter.id}", previous_tail))
 
-        def _cosine_similarity(v1: list, v2: list) -> float:
-            if not v1 or not v2 or len(v1) != len(v2):
-                return 0.0
-            dot = sum(a * b for a, b in zip(v1, v2))
-            norm_a = sum(a * a for a in v1) ** 0.5
-            norm_b = sum(b * b for b in v2) ** 0.5
-            if norm_a == 0.0 or norm_b == 0.0:
-                return 0.0
-            return float(dot / (norm_a * norm_b))
-
-        def ranked(candidates: List, search_of, name_of, get_embedding=None) -> List[Tuple[Any, int]]:
-            if not candidates:
-                return []
-
-            sparse_scores = {c: _score_terms(query_terms, *search_of(c)) for c in candidates}
-            dense_scores = {}
-            if query_embedding:
-                for c in candidates:
-                    emb = getattr(c, "embedding", None) if get_embedding is None else get_embedding(c)
-                    if emb and isinstance(emb, list):
-                        sim = _cosine_similarity(query_embedding, emb)
-                        if sim > 0.0:
-                            dense_scores[c] = sim
-
-            sparse_ranked = sorted(candidates, key=lambda c: (-sparse_scores.get(c, 0), str(name_of(c)).lower()))
-            sparse_ranks = {c: r for r, c in enumerate(sparse_ranked, 1)}
-
-            dense_ranks = {}
-            if dense_scores:
-                dense_ranked = sorted(dense_scores.keys(), key=lambda c: (-dense_scores[c], str(name_of(c)).lower()))
-                dense_ranks = {c: r for r, c in enumerate(dense_ranked, 1)}
-
-            def sort_key(c):
-                s_score = sparse_scores.get(c, 0)
-                if dense_scores:
-                    r_s = sparse_ranks.get(c, len(candidates) + 1)
-                    rrf = 1.0 / (60.0 + r_s)
-                    if c in dense_ranks:
-                        rrf += 1.0 / (60.0 + dense_ranks[c])
-                    return (-rrf, str(name_of(c)).lower())
-                return (-s_score, str(name_of(c)).lower())
-
-            sorted_candidates = sorted(candidates, key=sort_key)
-            return [
-                (c, sparse_scores.get(c, 0) + int(dense_scores.get(c, 0.0) * 10))
-                for c in sorted_candidates
-            ]
+        def rank(candidates: List, search_of, name_of, get_embedding=None) -> List[Tuple[Any, int]]:
+            return rank_candidate_entities(
+                candidates=candidates,
+                search_of=search_of,
+                name_of=name_of,
+                query_terms=query_terms,
+                query_embedding=query_embedding,
+                get_embedding=get_embedding,
+            )
 
         # 4. Canonical Story State & Entities (relevance-ranked, budget-gated)
         state_parts = []
 
-        characters = ranked(
+        characters = rank(
             list(Character.objects.filter(project=project)[: CANDIDATE_CAPS["characters"]]),
             lambda c: [c.name, *c.aliases, c.role, c.goals, *c.traits, c.wounds_status, c.internal_need],
             lambda c: c.name,
@@ -304,7 +335,7 @@ class ContextAssembler:
             if record_entry(str(char.id), "state", char_desc, priority=2, score=score):
                 state_parts.append(char_desc)
 
-        locations = ranked(
+        locations = rank(
             list(Location.objects.filter(project=project)[: CANDIDATE_CAPS["locations"]]),
             lambda loc: [loc.name, loc.description, loc.travel_rules, loc.current_state],
             lambda loc: loc.name,
@@ -317,7 +348,7 @@ class ContextAssembler:
             if record_entry(str(loc.id), "state", loc_desc, priority=2, score=score):
                 state_parts.append(loc_desc)
 
-        factions = ranked(
+        factions = rank(
             list(Faction.objects.filter(project=project)[: CANDIDATE_CAPS["factions"]]),
             lambda fac: [fac.name, fac.goals, fac.resources],
             lambda fac: fac.name,
@@ -329,7 +360,7 @@ class ContextAssembler:
             if record_entry(str(fac.id), "state", fac_desc, priority=2, score=score):
                 state_parts.append(fac_desc)
 
-        rules = ranked(
+        rules = rank(
             list(WorldRule.objects.filter(project=project)[: CANDIDATE_CAPS["rules"]]),
             lambda rule: [rule.title, rule.rule_statement, rule.forbidden_violations, rule.category],
             lambda rule: rule.title,
@@ -341,7 +372,7 @@ class ContextAssembler:
             if record_entry(str(rule.id), "state", r_desc, priority=1, score=score):
                 state_parts.append(r_desc)
 
-        threads = ranked(
+        threads = rank(
             list(
                 PlotThread.objects.filter(
                     project=project,
@@ -357,7 +388,7 @@ class ContextAssembler:
             if record_entry(str(thread.id), "state", t_desc, priority=2, score=score):
                 state_parts.append(t_desc)
 
-        items = ranked(
+        items = rank(
             list(
                 Item.objects.filter(project=project).select_related("current_holder", "current_location")[
                     : CANDIDATE_CAPS["items"]
@@ -396,7 +427,7 @@ class ContextAssembler:
             fact_candidates.append((fact, provenance_chapter))
 
         prov_map = {f.id: prov for f, prov in fact_candidates}
-        ranked_facts = ranked(
+        ranked_facts = rank(
             [f for f, _ in fact_candidates],
             lambda f: [f.subject, f.predicate, f.value],
             lambda f: f.subject,
@@ -456,8 +487,8 @@ class ContextAssembler:
         )
 
         final_prompt = "\n".join(user_prompt_sections)
-        template_overhead = BudgetCalculator.estimate_tokens(final_prompt) - sum(e["tokens"] for e in source_entries)
-        total_tokens = sum(e["tokens"] for e in source_entries) + BudgetCalculator.estimate_tokens(system_prompt) + max(0, template_overhead)
+        template_overhead = BudgetCalculator.estimate_tokens(final_prompt) - sum(e["tokens"] for e in tracker.source_entries)
+        total_tokens = sum(e["tokens"] for e in tracker.source_entries) + BudgetCalculator.estimate_tokens(system_prompt) + max(0, template_overhead)
 
         # Verify preflight budget
         if total_tokens > budget.usable_input:
@@ -466,7 +497,7 @@ class ContextAssembler:
                 f"Model limit is {model_context_limit} tokens."
             )
 
-        manifest_raw = json.dumps(source_entries, sort_keys=True)
+        manifest_raw = json.dumps(tracker.source_entries, sort_keys=True)
         manifest_hash = hashlib.sha256(manifest_raw.encode("utf-8")).hexdigest()
 
         manifest = ContextManifest.objects.create(
@@ -476,7 +507,7 @@ class ContextAssembler:
             requested_output_tokens=requested_output_tokens,
             usable_budget=budget.usable_input,
             category_budgets=budget.category_budgets,
-            source_entries=source_entries,
+            source_entries=tracker.source_entries,
             total_assembled_tokens=total_tokens,
             manifest_hash=manifest_hash,
         )
