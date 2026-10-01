@@ -41,8 +41,9 @@
             <div><dt>Canon revision</dt><dd>{{ p.active_branch_head }}</dd></div>
           </dl>
           <div class="library-card-actions">
-            <a href="{% url 'taletomo:project_overview' p.id %}" class="btn btn-secondary btn-sm">Story details</a>
-            <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-primary btn-sm btn-cta">Open outline <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+            <a href="{% url 'taletomo:project_read' p.id %}" class="btn btn-primary btn-sm">📖 Read</a>
+            <a href="{% url 'taletomo:project_overview' p.id %}" class="btn btn-secondary btn-sm">Details</a>
+            <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-secondary btn-sm btn-cta">Outline <span class="btn-cta-chip" aria-hidden="true">→</span></a>
           </div>
         </div>
       </article>

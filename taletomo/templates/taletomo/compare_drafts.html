@@ -1,17 +1,110 @@
 {% extends "base.html" %}
 
-{% block title %}Compare Drafts — {{ project.title }}{% endblock %}
+{% block title %}Compare Drafts — Chapter {{ left_draft.chapter.chapter_number }} — {{ project.title }}{% endblock %}
 
 {% block content %}
-<header class="page-head">
-  <p class="eyebrow-pill">Side by side</p>
-  <h1>Compare draft versions</h1>
-  <p>
-    Comparing Draft v{{ left_draft.version_number }} against Draft v{{ right_draft.version_number }}
-  </p>
+<style>
+  .diff-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .diff-pre {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .diff-line-add {
+    color: #34d399;
+    background: rgba(16, 185, 129, 0.12);
+    display: block;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .diff-line-del {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+    display: block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-decoration: line-through;
+  }
+  .diff-line-hunk {
+    color: #60a5fa;
+    background: rgba(59, 130, 246, 0.1);
+    display: block;
+    padding: 3px 6px;
+    margin: 6px 0;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+</style>
+
+<header class="page-head-row diff-toolbar">
+  <div class="page-head">
+    <p class="eyebrow-pill">Side by side</p>
+    <h1>Compare draft versions</h1>
+    <p>
+      Comparing <strong>Draft v{{ left_draft.version_number }}</strong> ({{ left_draft.word_count }}w) against <strong>Draft v{{ right_draft.version_number }}</strong> ({{ right_draft.word_count }}w) · Chapter {{ left_draft.chapter.chapter_number }}
+    </p>
+  </div>
+  <div class="page-actions">
+    <a href="{% url 'taletomo:chapter_edit' project.id left_draft.chapter_id %}" class="btn btn-secondary">
+      ← Back to Chapter {{ left_draft.chapter.chapter_number }}
+    </a>
+  </div>
 </header>
 
 <div class="card">
-  <div class="diff-container">{{ diff_text }}</div>
+  <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <h2>Visual Changes</h2>
+    <div style="display: flex; gap: 8px;">
+      <span class="badge badge-success">+ Additions</span>
+      <span class="badge badge-danger">- Deletions</span>
+    </div>
+  </div>
+  <div class="diff-container">
+    <div id="diff-display" class="diff-pre">{{ diff_text }}</div>
+  </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function() {
+    const el = document.getElementById('diff-display');
+    if (!el) return;
+    const raw = el.textContent;
+    if (!raw.trim()) {
+      el.innerHTML = '<span class="is-muted">No difference between these two draft versions.</span>';
+      return;
+    }
+    const lines = raw.split('\n');
+    el.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    lines.forEach(line => {
+      const div = document.createElement('div');
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        div.className = 'diff-line-add';
+        div.textContent = line;
+      } else if (line.startsWith('-') && !line.startsWith('---')) {
+        div.className = 'diff-line-del';
+        div.textContent = line;
+      } else if (line.startsWith('@@')) {
+        div.className = 'diff-line-hunk';
+        div.textContent = line;
+      } else {
+        div.textContent = line;
+      }
+      frag.appendChild(div);
+    });
+    el.appendChild(frag);
+  })();
+</script>
 {% endblock %}

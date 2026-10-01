@@ -13,7 +13,11 @@
     </p>
   </div>
 
-  <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+  <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+    <a href="{% url 'taletomo:project_read' project.id %}" class="btn btn-primary btn-sm btn-cta" title="Read novel in distraction-free Reader Mode">
+      📖 Read Mode <span class="btn-cta-chip" aria-hidden="true">→</span>
+    </a>
+
     <!-- Re-plan frontier horizon button -->
     <form method="post" action="{% url 'taletomo:project_replan_horizon' project.id %}" style="display: inline-flex;">
       {% csrf_token %}
