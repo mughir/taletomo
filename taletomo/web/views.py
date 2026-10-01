@@ -18,6 +18,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from taletomo.canon.models import (
     CanonFact,
     Character,
+    CharacterRelationship,
     CharacterRole,
     Faction,
     Location,
@@ -430,21 +431,202 @@ def project_characters(request, project_id):
         role = request.POST.get("role", CharacterRole.NEUTRAL)
         if role not in CharacterRole.values:
             role = CharacterRole.NEUTRAL
+        aliases_raw = request.POST.get("aliases", "")
+        aliases = [a.strip() for a in aliases_raw.split(",") if a.strip()]
+        traits_raw = request.POST.get("traits", "")
+        traits = [t.strip() for t in traits_raw.split(",") if t.strip()]
         wounds = request.POST.get("wounds_status", "").strip()
         goals = request.POST.get("goals", "").strip()
+        internal_need = request.POST.get("internal_need", "").strip()
+        appearance = request.POST.get("appearance", "").strip()
+        dialogue_style = request.POST.get("dialogue_style", "").strip()
+        is_alive = request.POST.get("is_alive", "1") in ("1", "true", "True", True)
+
         if name:
             Character.objects.create(
                 project=project,
                 name=name,
                 role=role,
+                aliases=aliases,
+                traits=traits,
                 wounds_status=wounds,
                 goals=goals,
+                internal_need=internal_need,
+                appearance=appearance,
+                dialogue_style=dialogue_style,
+                is_alive=is_alive,
             )
-            messages.success(request, f"Character '{name}' added.")
+            messages.success(request, f"Character '{name}' created.")
         return redirect("taletomo:project_characters", project_id=project.id)
 
-    characters = project.characters.all().order_by("name")
-    return render(request, "taletomo/project_characters.html", {"project": project, "characters": characters})
+    all_characters = list(project.characters.all().order_by("name"))
+    total_characters_count = len(all_characters)
+
+    # Search & Role Filtering
+    role_filter = request.GET.get("role", "").strip()
+    query = request.GET.get("q", "").strip().lower()
+
+    filtered_characters = all_characters
+    if role_filter:
+        if role_filter == "deceased":
+            filtered_characters = [c for c in filtered_characters if not c.is_alive]
+        else:
+            filtered_characters = [c for c in filtered_characters if c.role == role_filter]
+    if query:
+        filtered_characters = [
+            c
+            for c in filtered_characters
+            if query in c.name.lower() or any(query in a.lower() for a in (c.aliases or []))
+        ]
+
+    # Calculate appearance metrics and scene tracking
+    scenes = (
+        ScenePlan.objects.filter(chapter_plan__chapter__project=project)
+        .select_related("chapter_plan__chapter")
+    )
+    chapters = project.chapters.all()
+
+    pov_counts = {}
+    for ch in chapters:
+        if ch.pov_character_name:
+            low = ch.pov_character_name.lower().strip()
+            pov_counts[low] = pov_counts.get(low, 0) + 1
+
+    scene_counts = {}
+    chapter_appearances = {}
+    for s in scenes:
+        ch_num = s.chapter_plan.chapter.chapter_number
+        for c_name in (s.characters or []):
+            low = str(c_name).lower().strip()
+            scene_counts[low] = scene_counts.get(low, 0) + 1
+            if low not in chapter_appearances:
+                chapter_appearances[low] = set()
+            chapter_appearances[low].add(ch_num)
+
+    for c in all_characters:
+        variants = [v.lower() for v in c.get_name_variants()]
+        c.pov_count = sum(pov_counts.get(v, 0) for v in variants)
+        c.scene_count = sum(scene_counts.get(v, 0) for v in variants)
+        matched_chapters = sorted(set().union(*(chapter_appearances.get(v, set()) for v in variants)))
+        c.chapter_appearances = matched_chapters
+
+    relationships = (
+        project.character_relationships.select_related("source_character", "target_character")
+        .all()
+    )
+
+    return render(
+        request,
+        "taletomo/project_characters.html",
+        {
+            "project": project,
+            "characters": filtered_characters,
+            "all_characters": all_characters,
+            "relationships": relationships,
+            "total_characters_count": total_characters_count,
+            "role_filter": role_filter,
+            "query": query,
+            "character_roles": CharacterRole.choices,
+            "relationship_statuses": CharacterRelationship.DynamicStatus.choices,
+        },
+    )
+
+
+@login_required
+def project_character_edit(request, project_id, character_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    character = get_object_or_404(Character, id=character_id, project=project)
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        role = request.POST.get("role", CharacterRole.NEUTRAL)
+        if role not in CharacterRole.values:
+            role = CharacterRole.NEUTRAL
+        aliases_raw = request.POST.get("aliases", "")
+        aliases = [a.strip() for a in aliases_raw.split(",") if a.strip()]
+        traits_raw = request.POST.get("traits", "")
+        traits = [t.strip() for t in traits_raw.split(",") if t.strip()]
+
+        if name:
+            character.name = name
+            character.role = role
+            character.aliases = aliases
+            character.traits = traits
+            character.wounds_status = request.POST.get("wounds_status", "").strip()
+            character.goals = request.POST.get("goals", "").strip()
+            character.internal_need = request.POST.get("internal_need", "").strip()
+            character.appearance = request.POST.get("appearance", "").strip()
+            character.dialogue_style = request.POST.get("dialogue_style", "").strip()
+            character.is_alive = request.POST.get("is_alive", "1") in ("1", "true", "True", True)
+            character.save()
+            messages.success(request, f"Character '{character.name}' updated.")
+        return redirect("taletomo:project_characters", project_id=project.id)
+
+    return render(
+        request,
+        "taletomo/project_character_edit.html",
+        {
+            "project": project,
+            "character": character,
+            "character_roles": CharacterRole.choices,
+        },
+    )
+
+
+@login_required
+@require_POST
+def project_character_delete(request, project_id, character_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    character = get_object_or_404(Character, id=character_id, project=project)
+    name = character.name
+    character.delete()
+    messages.success(request, f"Character '{name}' deleted.")
+    return redirect("taletomo:project_characters", project_id=project.id)
+
+
+@login_required
+@require_POST
+def project_character_relationship_add(request, project_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    source_id = request.POST.get("source_character_id")
+    target_id = request.POST.get("target_character_id")
+    rel_type = request.POST.get("relationship_type", "").strip()
+    desc = request.POST.get("description", "").strip()
+    dyn_status = request.POST.get("dynamic_status", "neutral")
+
+    if not source_id or not target_id or source_id == target_id:
+        messages.error(request, "Please select two distinct characters.")
+        return redirect("taletomo:project_characters", project_id=project.id)
+
+    if not rel_type:
+        messages.error(request, "Please specify a relationship type (e.g. Rival, Mentor, Sibling).")
+        return redirect("taletomo:project_characters", project_id=project.id)
+
+    src = get_object_or_404(Character, id=source_id, project=project)
+    tgt = get_object_or_404(Character, id=target_id, project=project)
+
+    CharacterRelationship.objects.update_or_create(
+        source_character=src,
+        target_character=tgt,
+        defaults={
+            "project": project,
+            "relationship_type": rel_type,
+            "description": desc,
+            "dynamic_status": dyn_status,
+        },
+    )
+    messages.success(request, f"Relationship between {src.name} and {tgt.name} saved.")
+    return redirect("taletomo:project_characters", project_id=project.id)
+
+
+@login_required
+@require_POST
+def project_character_relationship_delete(request, project_id, relationship_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    rel = get_object_or_404(CharacterRelationship, id=relationship_id, project=project)
+    rel.delete()
+    messages.success(request, "Relationship removed.")
+    return redirect("taletomo:project_characters", project_id=project.id)
 
 
 @login_required

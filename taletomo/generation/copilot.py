@@ -134,6 +134,19 @@ class ProseCoPilotService:
         if plan and plan.objectives:
             prompt_sections.append(f"CHAPTER OBJECTIVES: {', '.join(plan.objectives)}")
 
+        # Inject character voice & speech guidelines
+        from taletomo.canon.models import find_project_character
+
+        pov_char_obj = find_project_character(project, pov_char) if pov_char else None
+        voice_guidelines = []
+        if pov_char_obj and pov_char_obj.dialogue_style:
+            voice_guidelines.append(f"- {pov_char_obj.name} (POV): {pov_char_obj.dialogue_style}")
+        for c in project.characters.filter(dialogue_style__isnull=False).exclude(dialogue_style=""):
+            if c != pov_char_obj and any(v.lower() in cleaned_text.lower() for v in c.get_name_variants()):
+                voice_guidelines.append(f"- {c.name}: {c.dialogue_style}")
+        if voice_guidelines:
+            prompt_sections.append("CHARACTER VOICE GUIDELINES:\n" + "\n".join(voice_guidelines))
+
         if context_before.strip():
             # Include last ~300 chars of preceding text for seamless syntactic flow
             tail_before = context_before.strip()[-350:]

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ character.name }} — {{ project.title }}{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow-pill">Character profile</p>
+  <h1>Edit {{ character.name }}</h1>
+  <p>Update narrative role, physical continuity, speech voice, and psychological arc.</p>
+</header>
+
+{% include "taletomo/_project_subnav.html" with active_tab="characters" %}
+
+<div style="max-width: 760px; margin: 0 auto;">
+  <div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+      <h2>Edit Character Profile</h2>
+      <a href="{% url 'taletomo:project_characters' project.id %}" class="btn btn-outline btn-sm">← Back to Cast</a>
+    </div>
+
+    <form method="post" style="padding-top: 14px;">
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label for="id_name" class="form-label">Character Name *</label>
+        <input type="text" id="id_name" name="name" value="{{ character.name }}" class="form-control" required>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="form-group">
+          <label for="id_role" class="form-label">Narrative Role</label>
+          <select id="id_role" name="role" class="form-control">
+            {% for val, label in character_roles %}
+              <option value="{{ val }}" {% if character.role == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="id_alive" class="form-label">Vital Status</label>
+          <select id="id_alive" name="is_alive" class="form-control">
+            <option value="1" {% if character.is_alive %}selected{% endif %}>Living</option>
+            <option value="0" {% if not character.is_alive %}selected{% endif %}>Deceased</option>
+          </select>
+          <small class="field-note">Continuity engine flags drafted scenes where a deceased character speaks or acts.</small>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="id_aliases" class="form-label">Aliases &amp; Titles (comma-separated)</label>
+        <input type="text" id="id_aliases" name="aliases" value="{{ character.aliases|join:', ' }}" class="form-control" placeholder="e.g. The Silver Blade, Rick">
+        <small class="field-note">Continuity and retrieval engines recognize all aliases across drafts.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="id_appearance" class="form-label">Physical Appearance &amp; Presence</label>
+        <textarea id="id_appearance" name="appearance" class="form-control" rows="2" placeholder="e.g. Lean, sharp jawline, mismatched silver and violet eyes, faded indigo coat.">{{ character.appearance }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="id_dialogue_style" class="form-label">Dialogue &amp; Speech Style (Voice Profile)</label>
+        <textarea id="id_dialogue_style" name="dialogue_style" class="form-control" rows="2" placeholder="e.g. Formal cadence, dry sarcasm, uses maritime idioms, never raises voice.">{{ character.dialogue_style }}</textarea>
+        <small class="field-note">Injected into Prose Co-Pilot and chapter generation to preserve distinctive character voice.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="id_wounds" class="form-label">Active Wounds &amp; Physical Impairments</label>
+        <input type="text" id="id_wounds" name="wounds_status" value="{{ character.wounds_status }}" class="form-control" placeholder="e.g. Left shoulder fractured, limping on right ankle">
+        <small class="field-note">Continuity engine flags any action that violates these injuries.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="id_goals" class="form-label">Current Goals &amp; Motivations</label>
+        <textarea id="id_goals" name="goals" class="form-control" rows="2">{{ character.goals }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="id_internal_need" class="form-label">Internal Need / Arc Driver (Flaw to overcome)</label>
+        <textarea id="id_internal_need" name="internal_need" class="form-control" rows="2">{{ character.internal_need }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="id_traits" class="form-label">Personality Traits (comma-separated)</label>
+        <input type="text" id="id_traits" name="traits" value="{{ character.traits|join:', ' }}" class="form-control" placeholder="e.g. Pragmatic, Fierce, Perceptive, Secretive">
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+        <a href="{% url 'taletomo:project_characters' project.id %}" class="btn btn-outline">Cancel</a>
+        <button type="submit" class="btn btn-primary btn-cta">
+          Save Changes <span class="btn-cta-chip" aria-hidden="true">→</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

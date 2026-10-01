@@ -502,7 +502,14 @@ class PlanningService:
         branched_project: Project,
     ) -> None:
         """Clones factions, characters, locations, rules, and items into the branched timeline."""
-        from taletomo.canon.models import Character, Faction, Item, Location, WorldRule
+        from taletomo.canon.models import (
+            Character,
+            CharacterRelationship,
+            Faction,
+            Item,
+            Location,
+            WorldRule,
+        )
 
         for fac in source_project.factions.all():
             Faction.objects.create(
@@ -514,8 +521,9 @@ class PlanningService:
                 alliances=fac.alliances,
             )
 
+        char_id_map = {}
         for char in source_project.characters.all():
-            Character.objects.create(
+            new_char = Character.objects.create(
                 project=branched_project,
                 name=char.name,
                 aliases=char.aliases,
@@ -523,12 +531,28 @@ class PlanningService:
                 traits=char.traits,
                 goals=char.goals,
                 internal_need=char.internal_need,
+                appearance=char.appearance,
+                dialogue_style=char.dialogue_style,
                 wounds_status=char.wounds_status,
                 is_alive=char.is_alive,
                 beliefs=char.beliefs,
                 metadata=char.metadata,
                 embedding=char.embedding,
             )
+            char_id_map[char.id] = new_char
+
+        for rel in source_project.character_relationships.all():
+            src_obj = char_id_map.get(rel.source_character_id)
+            tgt_obj = char_id_map.get(rel.target_character_id)
+            if src_obj and tgt_obj:
+                CharacterRelationship.objects.create(
+                    project=branched_project,
+                    source_character=src_obj,
+                    target_character=tgt_obj,
+                    relationship_type=rel.relationship_type,
+                    description=rel.description,
+                    dynamic_status=rel.dynamic_status,
+                )
 
         for loc in source_project.locations.all():
             Location.objects.create(
