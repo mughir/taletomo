@@ -317,10 +317,31 @@ class FakeProviderAdapter(BaseProviderAdapter):
                     "The cold subterranean water rushed past his boots as Captain Vance's shouting echoed from the street above."
                 )
         elif "task: copilot" in prompt_lower:
-            content = (
-                "The bitter cold seeped through Alaric's threadbare cloak as he watched the gaslights flicker along the canal. "
-                "Every breath formed mist, vanishing into the damp stone arches of the Old Aqueduct."
-            )
+            if "sensory_immersion" in prompt_lower:
+                content = (
+                    "The acrid reek of ozone and damp soot stung Alaric's nostrils. "
+                    "Icy rain bit into his cracked knuckles like glass needles as the distant clocktower tolled midnight."
+                )
+            elif "punch_up_dialogue" in prompt_lower:
+                content = (
+                    "'Keep your hollow promises,' Alaric rasped, blade staying leveled at Lord Malakor's chest. "
+                    "'In this city, blood is the only currency that doesn't depreciate.'"
+                )
+            elif "intensify_tension" in prompt_lower:
+                content = (
+                    "Three heartbeats left. The rune hummed violently, fractures glowing searing crimson. "
+                    "He hurled himself across the stone parapet a split-second before the ward detonated."
+                )
+            elif "show_not_tell" in prompt_lower:
+                content = (
+                    "Alaric's jaw tightened until tendons corded along his throat. "
+                    "His white-knuckled grip on the ledger shook, though his gaze never left the magistrate's smirking face."
+                )
+            else:
+                content = (
+                    "The bitter cold seeped through Alaric's threadbare cloak as he watched the gaslights flicker along the canal. "
+                    "Every breath formed mist, vanishing into the damp stone arches of the Old Aqueduct."
+                )
         elif "task: draft_chapter" in prompt_lower:
             content = (
                 "The rain pounded against the leaded glass of Alaric's study, streaking the dark panorama of the Grand Dominion. "
