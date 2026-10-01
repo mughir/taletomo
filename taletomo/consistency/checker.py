@@ -107,25 +107,7 @@ def _match_injury_actions(prose_lower: str, injuries: list) -> list:
 
 def _character_name_variants(char: Character) -> list[str]:
     """Resolves character name variants: full name, first-token (if >= 3 chars), and aliases."""
-    variants = []
-    if char.name and char.name.strip():
-        name_clean = char.name.strip()
-        variants.append(name_clean)
-        first_token = name_clean.split()[0]
-        if len(first_token) >= 3 and first_token.lower() != name_clean.lower():
-            variants.append(first_token)
-    for alias in (char.aliases or []):
-        alias_clean = str(alias).strip()
-        if len(alias_clean) >= 2:
-            variants.append(alias_clean)
-    seen = set()
-    deduped = []
-    for v in variants:
-        low = v.lower()
-        if low not in seen:
-            seen.add(low)
-            deduped.append(v)
-    return deduped
+    return char.get_name_variants()
 
 
 def _clean_draft_id(draft_id: Optional[Any]) -> Optional[uuid.UUID]:

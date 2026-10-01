@@ -1,5 +1,5 @@
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from django.db import transaction
 from django.utils.text import slugify
 from taletomo.planning.models import (
@@ -430,59 +430,8 @@ class PlanningService:
         }
 
     @staticmethod
-    @transaction.atomic
-    def branch_project(
-        source_project: Project,
-        from_chapter: int,
-        branch_name: str,
-    ) -> Project:
-        """Creates a parallel 'What-If' timeline diverging from a specified chapter."""
-        from taletomo.canon.models import (
-            CanonFact,
-            Character,
-            Faction,
-            Item,
-            Location,
-            PlotThread,
-            WorldRule,
-        )
-        from taletomo.generation.models import DraftArtifact
-
-        clean_branch = branch_name.strip() or "Alternate Timeline"
-        branch_slug = f"{source_project.slug}-{slugify(clean_branch)}"
-        base_slug = branch_slug
-        counter = 1
-        while Project.objects.filter(slug=branch_slug).exists():
-            branch_slug = f"{base_slug}-{counter}"
-            counter += 1
-
-        branched_project = Project.objects.create(
-            owner=source_project.owner,
-            title=f"{source_project.title} ({clean_branch})",
-            slug=branch_slug,
-            premise=source_project.premise,
-            target_chapters=source_project.target_chapters,
-            length_preset=source_project.length_preset,
-            target_words_per_chapter=source_project.target_words_per_chapter,
-            tolerance_percent=source_project.tolerance_percent,
-            genre=source_project.genre,
-            subgenre=source_project.subgenre,
-            audience=source_project.audience,
-            tone=source_project.tone,
-            language=source_project.language,
-            prose_language=source_project.prose_language,
-            pov=source_project.pov,
-            tense=source_project.tense,
-            pacing=source_project.pacing,
-            protagonist_type=source_project.protagonist_type,
-            novel_tags=source_project.novel_tags,
-            content_boundaries=source_project.content_boundaries,
-            parent_project=source_project,
-            branch_point_chapter=from_chapter,
-            branch_name=clean_branch,
-        )
-
-        # 1. Clone Bible
+    def _clone_bible(source_project: Project, branched_project: Project) -> None:
+        """Clones the SeriesBible configuration if present."""
         if hasattr(source_project, "bible"):
             b = source_project.bible
             SeriesBible.objects.create(
@@ -500,7 +449,9 @@ class PlanningService:
                 author_constraints=b.author_constraints,
             )
 
-        # 2. Clone Spine
+    @staticmethod
+    def _clone_spine(source_project: Project, branched_project: Project) -> None:
+        """Clones the SeriesSpine architecture if present."""
         if hasattr(source_project, "spine"):
             s = source_project.spine
             SeriesSpine.objects.create(
@@ -511,7 +462,12 @@ class PlanningService:
                 sparse_volumes_overview=s.sparse_volumes_overview,
             )
 
-        # 3. Clone Volumes and Arcs
+    @staticmethod
+    def _clone_volumes_and_arcs(
+        source_project: Project,
+        branched_project: Project,
+    ) -> Tuple[Dict[Any, Volume], Dict[Any, Arc]]:
+        """Clones structural Volumes and Arcs, returning mapping dictionaries."""
         vol_map = {}
         for vol in source_project.volumes.all():
             new_vol = Volume.objects.create(
@@ -538,8 +494,16 @@ class PlanningService:
                     target_state_transition=arc.target_state_transition,
                 )
                 arc_map[arc.id] = new_arc
+        return vol_map, arc_map
 
-        # 4. Clone Canon Entities (Factions, Characters, Locations, Rules)
+    @staticmethod
+    def _clone_canon_entities(
+        source_project: Project,
+        branched_project: Project,
+    ) -> None:
+        """Clones factions, characters, locations, rules, and items into the branched timeline."""
+        from taletomo.canon.models import Character, Faction, Item, Location, WorldRule
+
         for fac in source_project.factions.all():
             Faction.objects.create(
                 project=branched_project,
@@ -604,7 +568,15 @@ class PlanningService:
                 current_location=l_obj,
             )
 
-        # 5. Clone Canon Facts and Plot Threads up to from_chapter
+    @staticmethod
+    def _clone_facts_and_threads(
+        source_project: Project,
+        branched_project: Project,
+        from_chapter: int,
+    ) -> None:
+        """Clones confirmed facts and plot threads active up to the branch point."""
+        from taletomo.canon.models import CanonFact, PlotThread
+
         for fact in source_project.canon_facts.filter(canonical_status=CanonFact.Status.CONFIRMED):
             CanonFact.objects.create(
                 project=branched_project,
@@ -631,7 +603,17 @@ class PlanningService:
                 notes=th.notes,
             )
 
-        # 6. Clone Chapters
+    @staticmethod
+    def _clone_chapters_and_drafts(
+        source_project: Project,
+        branched_project: Project,
+        from_chapter: int,
+        vol_map: Dict[Any, Volume],
+        arc_map: Dict[Any, Arc],
+    ) -> None:
+        """Clones committed chapters with drafts and scene plans, and resets post-branch chapters."""
+        from taletomo.generation.models import DraftArtifact
+
         source_chapters = list(
             source_project.chapters.prefetch_related("drafts").order_by("chapter_number")
         )
@@ -699,6 +681,66 @@ class PlanningService:
                     title=f"Chapter {ch.chapter_number}",
                     status=Chapter.Status.UNPLANNED,
                 )
+
+    @staticmethod
+    @transaction.atomic
+    def branch_project(
+        source_project: Project,
+        from_chapter: int,
+        branch_name: str,
+    ) -> Project:
+        """Creates a parallel 'What-If' timeline diverging from a specified chapter."""
+        clean_branch = branch_name.strip() or "Alternate Timeline"
+        branch_slug = f"{source_project.slug}-{slugify(clean_branch)}"
+        base_slug = branch_slug
+        counter = 1
+        while Project.objects.filter(slug=branch_slug).exists():
+            branch_slug = f"{base_slug}-{counter}"
+            counter += 1
+
+        branched_project = Project.objects.create(
+            owner=source_project.owner,
+            title=f"{source_project.title} ({clean_branch})",
+            slug=branch_slug,
+            premise=source_project.premise,
+            target_chapters=source_project.target_chapters,
+            length_preset=source_project.length_preset,
+            target_words_per_chapter=source_project.target_words_per_chapter,
+            tolerance_percent=source_project.tolerance_percent,
+            genre=source_project.genre,
+            subgenre=source_project.subgenre,
+            audience=source_project.audience,
+            tone=source_project.tone,
+            language=source_project.language,
+            prose_language=source_project.prose_language,
+            pov=source_project.pov,
+            tense=source_project.tense,
+            pacing=source_project.pacing,
+            protagonist_type=source_project.protagonist_type,
+            novel_tags=source_project.novel_tags,
+            content_boundaries=source_project.content_boundaries,
+            parent_project=source_project,
+            branch_point_chapter=from_chapter,
+            branch_name=clean_branch,
+        )
+
+        # 1. Clone Bible & Spine
+        PlanningService._clone_bible(source_project, branched_project)
+        PlanningService._clone_spine(source_project, branched_project)
+
+        # 2. Clone Volumes and Arcs
+        vol_map, arc_map = PlanningService._clone_volumes_and_arcs(source_project, branched_project)
+
+        # 3. Clone Canon Entities & Relationships
+        PlanningService._clone_canon_entities(source_project, branched_project)
+
+        # 4. Clone Canon Facts and Plot Threads up to from_chapter
+        PlanningService._clone_facts_and_threads(source_project, branched_project, from_chapter)
+
+        # 5. Clone Chapters, Drafts, and Plans
+        PlanningService._clone_chapters_and_drafts(
+            source_project, branched_project, from_chapter, vol_map, arc_map
+        )
 
         PlanningService.ensure_rolling_horizon(
             branched_project, horizon_size=min(source_project.target_chapters, from_chapter + 3)
