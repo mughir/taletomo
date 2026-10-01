@@ -298,12 +298,15 @@
     color: var(--reader-muted);
   }
 
-  /* Paragraphs */
+  /* Paragraphs, Alignment & Spacing */
   .prose-body p {
     margin-bottom: 1.5em;
-    text-align: justify;
     hyphens: auto;
   }
+  .align-justify p { text-align: justify; }
+  .align-left p { text-align: left; hyphens: none; }
+  .spacing-relaxed p { line-height: 1.85; margin-bottom: 1.6em; }
+  .spacing-compact p { line-height: 1.55; margin-bottom: 1.1em; }
   .scene-divider {
     text-align: center;
     margin: 2.5em 0;
@@ -371,6 +374,9 @@
         <a href="{% url 'taletomo:project_overview' project.id %}">← {{ project.title }}</a>
         <span aria-hidden="true">/</span>
         <span>Ch {{ chapter.chapter_number }}</span>
+        <span v-if="readingPct > 0" class="badge badge-subtle" style="font-size: 0.72rem; padding: 2px 6px;" v-cloak>
+          {{ readingPct }}% read
+        </span>
       </div>
 
       <div class="reader-controls">
@@ -444,6 +450,22 @@
           <button type="button" class="option-btn" :class="{active: width === 'narrow'}" @click="setWidth('narrow')">Narrow</button>
           <button type="button" class="option-btn" :class="{active: width === 'standard'}" @click="setWidth('standard')">Normal</button>
           <button type="button" class="option-btn" :class="{active: width === 'wide'}" @click="setWidth('wide')">Wide</button>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-row-label">Align</div>
+        <div class="settings-options">
+          <button type="button" class="option-btn" :class="{active: align === 'justify'}" @click="setAlign('justify')">Justified</button>
+          <button type="button" class="option-btn" :class="{active: align === 'left'}" @click="setAlign('left')">Left</button>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-row-label">Spacing</div>
+        <div class="settings-options">
+          <button type="button" class="option-btn" :class="{active: spacing === 'relaxed'}" @click="setSpacing('relaxed')">Relaxed</button>
+          <button type="button" class="option-btn" :class="{active: spacing === 'compact'}" @click="setSpacing('compact')">Compact</button>
         </div>
       </div>
     </div>
@@ -521,7 +543,7 @@
       </div>
     {% else %}
       <!-- Prose text rendering -->
-      <div class="prose-body" :class="'size-' + size + ' font-' + font">
+      <div class="prose-body" :class="['size-' + size, 'font-' + font, 'align-' + align, 'spacing-' + spacing]">
         {% for para in active_draft.prose_content.splitlines %}
           {% if para.strip == "* * *" or para.strip == "***" or para.strip == "---" %}
             <div class="scene-divider" aria-hidden="true">✦ ✦ ✦</div>
@@ -586,6 +608,9 @@
           font: localStorage.getItem('taletomo_reader_font') || 'serif',
           size: localStorage.getItem('taletomo_reader_size') || 'md',
           width: localStorage.getItem('taletomo_reader_width') || 'standard',
+          align: localStorage.getItem('taletomo_reader_align') || 'justify',
+          spacing: localStorage.getItem('taletomo_reader_spacing') || 'relaxed',
+          readingPct: 0,
           activeJobId: '{{ active_job.id|default:"" }}',
         };
       },
@@ -628,6 +653,14 @@
           localStorage.setItem('taletomo_reader_width', w);
           this.applyPreferences();
         },
+        setAlign(a) {
+          this.align = a;
+          localStorage.setItem('taletomo_reader_align', a);
+        },
+        setSpacing(s) {
+          this.spacing = s;
+          localStorage.setItem('taletomo_reader_spacing', s);
+        },
         applyPreferences() {
           const themeClasses = ['reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark', 'reader-theme-midnight'];
           const app = document.getElementById('reader-app');
@@ -647,6 +680,7 @@
           if (progressEl && docHeight > 0) {
             const pct = Math.min(100, Math.max(0, (scrollPos / docHeight) * 100));
             progressEl.style.width = pct + '%';
+            this.readingPct = Math.round(pct);
           }
         },
         toggleFullscreen() {

@@ -40,9 +40,15 @@
 
       <div class="project-list">
         {% for p in projects %}
-          <article class="project-row">
+          <article class="project-row" style="transition: transform 0.2s ease, box-shadow 0.2s ease;">
             <div class="project-row-main">
-              <p class="project-kicker">{{ p.genre }} <span aria-hidden="true">·</span> {{ p.target_chapters }} chapters planned</p>
+              <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px; flex-wrap: wrap;">
+                <span class="project-kicker" style="margin-bottom: 0;">{{ p.genre }}</span>
+                <span class="badge badge-subtle" style="font-size: 0.75rem;">{{ p.target_chapters }} chapters</span>
+                {% if p.tone %}
+                  <span class="badge badge-subtle" style="font-size: 0.72rem; opacity: 0.85;">{{ p.tone|truncatechars:20 }}</span>
+                {% endif %}
+              </div>
               <h3><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h3>
               {% if p.premise %}<p class="project-premise">{{ p.premise|truncatewords:24 }}</p>{% endif %}
             </div>

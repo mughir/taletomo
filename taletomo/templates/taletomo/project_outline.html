@@ -39,6 +39,19 @@
 
 {% include "taletomo/_project_subnav.html" with active_tab="outline" %}
 
+<!-- Live Outline Filter Toolbar -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+  <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;" id="outline-filter-pills">
+    <button type="button" class="badge badge-primary outline-filter-pill active" onclick="filterOutlineRows('all', this)" style="cursor: pointer; border: none;">All Chapters</button>
+    <button type="button" class="badge badge-subtle outline-filter-pill" onclick="filterOutlineRows('approved', this)" style="cursor: pointer; border: none;">Approved</button>
+    <button type="button" class="badge badge-subtle outline-filter-pill" onclick="filterOutlineRows('review', this)" style="cursor: pointer; border: none;">Under review</button>
+    <button type="button" class="badge badge-subtle outline-filter-pill" onclick="filterOutlineRows('planned', this)" style="cursor: pointer; border: none;">Planned</button>
+  </div>
+  <div>
+    <input type="text" id="outline-search" class="form-control" style="font-size: 0.85rem; padding: 6px 14px; width: 220px; min-height: 36px;" placeholder="Filter chapters by title…">
+  </div>
+</div>
+
 <div class="table-wrap">
   <table class="data-table">
     <thead>
@@ -53,7 +66,7 @@
     </thead>
     <tbody>
       {% for ch in page_obj %}
-        <tr>
+        <tr class="outline-row" data-status="{{ ch.status }}">
           <td class="is-strong is-numeric">{{ ch.chapter_number }}</td>
           <td>
             <a href="{% url 'taletomo:chapter_edit' project.id ch.id %}" class="is-strong">{{ ch.title|default:"Untitled Chapter" }}</a>
@@ -72,7 +85,14 @@
               <span class="badge badge-subtle">{{ ch.get_status_display }}</span>
             {% endif %}
           </td>
-          <td class="is-numeric">{{ ch.current_word_count }} / {{ project.target_words_per_chapter }}</td>
+          <td class="is-numeric">
+            <div style="font-weight: 600;">{{ ch.current_word_count }} <span class="is-muted" style="font-weight: 400; font-size: 0.82rem;">/ {{ project.target_words_per_chapter }}w</span></div>
+            {% if project.target_words_per_chapter > 0 %}
+              <div style="background: var(--hairline); height: 4px; border-radius: 2px; overflow: hidden; width: 85px; margin: 4px 0 0 auto;">
+                <div style="background: {% if ch.current_word_count >= project.target_words_per_chapter %}var(--success){% else %}var(--primary){% endif %}; height: 100%; width: {% widthratio ch.current_word_count project.target_words_per_chapter 100 %}%; max-width: 100%;"></div>
+              </div>
+            {% endif %}
+          </td>
           <td class="is-muted">
             {% if ch.plan %}
               {{ ch.plan.objectives|length }} objectives • {{ ch.plan.scenes.count }} scenes
@@ -114,4 +134,42 @@
     </div>
   {% endif %}
 </div>
+
+<script>
+let currentOutlineStatus = 'all';
+
+function filterOutlineRows(status, btn) {
+  currentOutlineStatus = status;
+  document.querySelectorAll('.outline-filter-pill').forEach(b => {
+    b.classList.remove('badge-primary');
+    b.classList.add('badge-subtle');
+  });
+  if (btn) {
+    btn.classList.remove('badge-subtle');
+    btn.classList.add('badge-primary');
+  }
+  const query = (document.getElementById('outline-search').value || '').toLowerCase();
+  applyOutlineFilters(status, query);
+}
+
+function applyOutlineFilters(status, query) {
+  const activeStatus = status || currentOutlineStatus || 'all';
+  document.querySelectorAll('.outline-row').forEach(row => {
+    const rowStatus = row.getAttribute('data-status') || '';
+    const text = row.textContent.toLowerCase();
+    const matchesStatus = (activeStatus === 'all') || (activeStatus === 'approved' && (rowStatus === 'approved' || rowStatus === 'locked')) || (rowStatus === activeStatus);
+    const matchesQuery = !query || text.includes(query);
+    row.style.display = (matchesStatus && matchesQuery) ? '' : 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const searchInput = document.getElementById('outline-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      applyOutlineFilters(currentOutlineStatus, this.value.toLowerCase());
+    });
+  }
+});
+</script>
 {% endblock %}
