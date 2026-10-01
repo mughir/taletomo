@@ -3,7 +3,7 @@ import logging
 import re
 import uuid
 from typing import Any, Dict, List, Optional
-from taletomo.canon.models import Character, WorldRule
+from taletomo.canon.models import CanonFact, Character, Item, Location, WorldRule
 from taletomo.consistency.models import (
     ContinuityFinding,
     FindingCategory,
@@ -241,13 +241,135 @@ class ContinuityChecker:
                         severity=FindingSeverity.BLOCKER,
                         confidence=0.85,
                         claim=f"Possible violation of world rule: '{rule.title}'",
-                        conflicting_evidence=[f"WorldRule #{rule.title}: {rule.rule_statement} (Forbidden: {rule.forbidden_violations})"],
+                        conflicting_evidence=[
+                            f"WorldRule #{rule.title}: {rule.rule_statement} (Forbidden: {rule.forbidden_violations})"
+                        ],
                         source_references=[f"Chapter {chapter.chapter_number}"],
                         suggested_action=f"Revise passage to comply with world rule constraint.",
                     )
                 )
 
+        # 5. Spatial causality & impossible travel check
+        locations = list(Location.objects.filter(project=project))
+        if len(locations) >= 2:
+            locations_by_name = {loc.name.lower(): loc for loc in locations}
+            all_characters = list(Character.objects.filter(project=project))
+            for char in all_characters:
+                variants = _character_name_variants(char)
+                if not any(
+                    re.search(rf"\b{re.escape(v.lower())}\b", prose_lower) for v in variants
+                ):
+                    continue
+
+                last_loc_fact = (
+                    CanonFact.objects.filter(
+                        project=project,
+                        subject__iexact=char.name,
+                        predicate="current_location",
+                        canonical_status=CanonFact.Status.CONFIRMED,
+                    )
+                    .order_by("-updated_at")
+                    .first()
+                )
+                if not last_loc_fact:
+                    continue
+
+                prior_loc = locations_by_name.get(last_loc_fact.value.lower())
+                if not prior_loc:
+                    continue
+
+                for loc_name_low, curr_loc in locations_by_name.items():
+                    if curr_loc.id == prior_loc.id:
+                        continue
+                    if re.search(rf"\b{re.escape(loc_name_low)}\b", prose_lower):
+                        dist = prior_loc.distance_to(curr_loc)
+                        if dist > 100.0:
+                            has_transit = any(
+                                word in prose_lower
+                                for word in [
+                                    "journeyed",
+                                    "traveled",
+                                    "travelled",
+                                    "voyage",
+                                    "marched",
+                                    "rode for",
+                                    "days later",
+                                    "weeks later",
+                                    "teleport",
+                                    "portal",
+                                    "airship",
+                                    "carriage",
+                                    "transit",
+                                    "flight",
+                                    "after traveling",
+                                    "after days",
+                                    "after weeks",
+                                    "after months",
+                                    "camped",
+                                ]
+                            )
+                            if not has_transit:
+                                findings.append(
+                                    ContinuityFinding(
+                                        project=project,
+                                        chapter=chapter,
+                                        draft_id=clean_id,
+                                        category=FindingCategory.LOCATION,
+                                        severity=FindingSeverity.WARNING,
+                                        confidence=0.85,
+                                        claim=(
+                                            f"Spatial causality: {char.name} moved {dist:.1f} leagues from "
+                                            f"{prior_loc.name} to {curr_loc.name} without narrative transit time or transport magic."
+                                        ),
+                                        conflicting_evidence=[
+                                            f"Location coords: {prior_loc.name} ({prior_loc.coord_x}, {prior_loc.coord_y}) vs "
+                                            f"{curr_loc.name} ({curr_loc.coord_x}, {curr_loc.coord_y}) = {dist:.1f} leagues distance",
+                                            f"Prior Canon: {char.name} current_location was {prior_loc.name}",
+                                        ],
+                                        source_references=[f"Chapter {chapter.chapter_number}"],
+                                        suggested_action=f"Add transit scene/beat or explain rapid travel between {prior_loc.name} and {curr_loc.name}.",
+                                    )
+                                )
+
+        # 6. Item lifecycle and destroyed artifact resurrection check
+        items = list(Item.objects.filter(project=project))
+        USE_VERBS = re.compile(
+            r"\b(?:drew|drawn|wielded|wielding|swung|swinging|slashed|stabbed|thrust|raised|brandished|held|holding|gripped|activated|fired|unleashed)\b"
+        )
+        for item in items:
+            item_name_low = item.name.lower()
+            if item_name_low in prose_lower:
+                if item.is_destroyed:
+                    for m in re.finditer(rf"\b{re.escape(item_name_low)}\b", prose_lower):
+                        start = max(0, m.start() - 60)
+                        end = min(len(prose_lower), m.end() + 60)
+                        snippet = prose_lower[start:end]
+                        if USE_VERBS.search(snippet):
+                            findings.append(
+                                ContinuityFinding(
+                                    project=project,
+                                    chapter=chapter,
+                                    draft_id=clean_id,
+                                    category=FindingCategory.TIMELINE,
+                                    severity=FindingSeverity.BLOCKER,
+                                    confidence=0.95,
+                                    claim=(
+                                        f"Destroyed artifact contradiction: '{item.name}' was destroyed in "
+                                        f"Chapter {item.destroyed_at_chapter or 'earlier'}, but prose depicts it being wielded or used."
+                                    ),
+                                    conflicting_evidence=[
+                                        f"Item Record: '{item.name}' status is destroyed (Chapter {item.destroyed_at_chapter or 'prior'})"
+                                    ],
+                                    source_references=[
+                                        f"Chapter {chapter.chapter_number}: '{snippet.strip()}'"
+                                    ],
+                                    suggested_action=f"Remove use of '{item.name}' or clarify it is a replica/memory.",
+                                )
+                            )
+                            break
+
         return findings
+
 
     @staticmethod
     def run_model_critique(

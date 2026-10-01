@@ -215,6 +215,122 @@ def project_new(request):
 
 
 @login_required
+def project_wizard(request):
+    """Interactive multi-step AI-assisted worldbuilding wizard."""
+    from taletomo.planning.wizard import WorldbuildingWizardService
+
+    if request.method == "POST":
+        raw_payload = request.POST.get("wizard_payload")
+        if raw_payload:
+            try:
+                wizard_data = json.loads(raw_payload)
+            except Exception:
+                wizard_data = {}
+        else:
+            wizard_data = {
+                "project": {
+                    "title": request.POST.get("title", "").strip() or "Untitled Epic",
+                    "premise": request.POST.get("premise", "").strip() or "A grand journey.",
+                    "target_chapters": int(request.POST.get("target_chapters", 50)),
+                    "genre": request.POST.get("genre", "Fantasy"),
+                    "tone": request.POST.get("tone", "Epic, Mysterious"),
+                    "protagonist_type": request.POST.get("protagonist_type", ""),
+                    "novel_tags": request.POST.get("novel_tags", ""),
+                },
+                "bible": {
+                    "world_setting": request.POST.get("world_setting", ""),
+                    "central_conflict": request.POST.get("central_conflict", ""),
+                    "magic_tech_rules": [
+                        r.strip()
+                        for r in request.POST.get("magic_tech_rules", "").splitlines()
+                        if r.strip()
+                    ],
+                },
+                "factions": [],
+                "characters": [],
+            }
+
+        adapter = None
+        try:
+            adapter = ProviderGateway.get_adapter(user=request.user)
+        except Exception:
+            pass
+
+        project = WorldbuildingWizardService.finalize_wizard(
+            user=request.user, wizard_data=wizard_data, adapter=adapter
+        )
+        messages.success(
+            request,
+            f"Welcome to your new world: '{project.title}' is initialized and ready to write!",
+        )
+        return redirect("taletomo:project_overview", project_id=project.id)
+
+    return render(
+        request,
+        "taletomo/project_wizard.html",
+        {"presets": ProjectLengthPreset.choices, **_style_term_lists(request.user)},
+    )
+
+
+@login_required
+@require_POST
+def project_wizard_api(request):
+    """AJAX JSON endpoint for AI proposals in the worldbuilding wizard."""
+    from taletomo.planning.wizard import WorldbuildingWizardService
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON payload"}, status=400)
+
+    action = data.get("action", "")
+    premise = data.get("premise", "")
+    genre = data.get("genre", "Fantasy")
+    tone = data.get("tone", "Epic")
+
+    adapter = None
+    try:
+        adapter = ProviderGateway.get_adapter(user=request.user)
+    except Exception:
+        pass
+
+    if action == "propose_bible":
+        result = WorldbuildingWizardService.propose_world_bible(
+            premise, genre=genre, tone=tone, adapter=adapter
+        )
+        return JsonResponse({"status": "ok", "data": result})
+
+    elif action == "propose_factions":
+        world_setting = data.get("world_setting", "")
+        result = WorldbuildingWizardService.propose_factions(
+            premise, genre=genre, world_setting=world_setting, adapter=adapter
+        )
+        return JsonResponse({"status": "ok", "data": result})
+
+    elif action == "propose_characters":
+        factions = data.get("factions", [])
+        protagonist_type = data.get("protagonist_type", "Underdog")
+        result = WorldbuildingWizardService.propose_characters(
+            premise,
+            genre=genre,
+            factions=factions,
+            protagonist_type=protagonist_type,
+            adapter=adapter,
+        )
+        return JsonResponse({"status": "ok", "data": result})
+
+    elif action == "propose_spine":
+        target_chapters = int(data.get("target_chapters", 50))
+        result = WorldbuildingWizardService.propose_spine_and_arcs(
+            premise, target_chapters=target_chapters, adapter=adapter
+        )
+        return JsonResponse({"status": "ok", "data": result})
+
+    return JsonResponse({"status": "error", "message": f"Unknown action: {action}"}, status=400)
+
+
+
+@login_required
 def style_dictionary(request):
     """Browse, add, and remove style-dictionary terms (definitions + examples)."""
     if request.method == "POST":
@@ -526,6 +642,59 @@ def chapter_plan(request, project_id, chapter_id):
         "continuity_text": "\n".join(plan.continuity_requirements),
     }
     return render(request, "taletomo/chapter_plan.html", context)
+
+
+@login_required
+@require_POST
+def project_replan_horizon(request, project_id):
+    """Dynamically re-plans upcoming uncommitted chapter contracts based on newly established canon."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    from_ch = request.POST.get("from_chapter")
+    from_chapter = int(from_ch) if from_ch and from_ch.isdigit() else None
+    horizon = int(request.POST.get("horizon_size", 5))
+
+    result = PlanningService.replan_frontier(
+        project, from_chapter=from_chapter, horizon_size=horizon
+    )
+    replanned = result.get("replanned_chapters", [])
+    if replanned:
+        messages.success(
+            request,
+            f"Successfully re-planned {len(replanned)} upcoming chapter contracts (Ch {min(replanned)}–{max(replanned)}) based on current canon!",
+        )
+    else:
+        messages.info(request, "No upcoming uncommitted chapters required re-planning.")
+
+    return redirect("taletomo:project_outline", project_id=project.id)
+
+
+@login_required
+@require_POST
+def project_branch(request, project_id):
+    """Creates an alternate 'What-If' timeline diverging from a specified chapter."""
+    source_project = get_object_or_404(Project, id=project_id, owner=request.user)
+    from_ch = request.POST.get("from_chapter", "1")
+    branch_name = (
+        request.POST.get("branch_name", "Alternate Timeline").strip() or "Alternate Timeline"
+    )
+
+    try:
+        from_chapter = int(from_ch)
+    except (TypeError, ValueError):
+        from_chapter = 1
+
+    branched_project = PlanningService.branch_project(
+        source_project=source_project,
+        from_chapter=from_chapter,
+        branch_name=branch_name,
+    )
+    messages.success(
+        request,
+        f"Forked new timeline '{branched_project.title}' diverging from Chapter {from_chapter}!",
+    )
+    return redirect("taletomo:project_overview", project_id=branched_project.id)
+
+
 
 
 @login_required

@@ -67,9 +67,15 @@ class Project(UUIDModel):
     content_boundaries = models.TextField(blank=True, default="")
 
     active_branch_head = models.CharField(max_length=50, default="rev_1")
+    parent_project = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="branches"
+    )
+    branch_point_chapter = models.PositiveIntegerField(null=True, blank=True)
+    branch_name = models.CharField(max_length=120, blank=True, default="")
     status = models.CharField(
         max_length=20, choices=ProjectStatus.choices, default=ProjectStatus.ACTIVE
     )
+
 
     class Meta:
         ordering = ["-updated_at"]

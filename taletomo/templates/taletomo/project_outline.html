@@ -13,13 +13,25 @@
     </p>
   </div>
 
-  <!-- Direct Chapter Jump Form (scales up to 4,000 chapters) -->
-  <form method="get" class="jump-form">
-    <label for="id_jump">Jump to chapter:</label>
-    <input type="number" id="id_jump" name="jump" class="form-control" min="1" max="{{ project.target_chapters }}" placeholder="e.g. 1">
-    <button type="submit" class="btn btn-secondary btn-sm">Go</button>
-  </form>
+  <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+    <!-- Re-plan frontier horizon button -->
+    <form method="post" action="{% url 'taletomo:project_replan_horizon' project.id %}" style="display: inline-flex;">
+      {% csrf_token %}
+      <input type="hidden" name="horizon_size" value="5">
+      <button type="submit" class="btn btn-secondary btn-sm" title="Re-plan upcoming 5 chapter contracts based on current canon developments">
+        ↻ Re-Plan Frontier
+      </button>
+    </form>
+
+    <!-- Direct Chapter Jump Form (scales up to 4,000 chapters) -->
+    <form method="get" class="jump-form">
+      <label for="id_jump">Jump to chapter:</label>
+      <input type="number" id="id_jump" name="jump" class="form-control" min="1" max="{{ project.target_chapters }}" placeholder="e.g. 1">
+      <button type="submit" class="btn btn-secondary btn-sm">Go</button>
+    </form>
+  </div>
 </header>
+
 
 {% include "taletomo/_project_subnav.html" with active_tab="outline" %}
 

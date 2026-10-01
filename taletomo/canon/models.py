@@ -63,6 +63,9 @@ class Location(UUIDModel):
     description = models.TextField(blank=True, default="")
     travel_rules = models.TextField(blank=True, default="")
     current_state = models.TextField(blank=True, default="")
+    coord_x = models.FloatField(default=0.0)
+    coord_y = models.FloatField(default=0.0)
+    region = models.CharField(max_length=120, blank=True, default="")
     embedding = models.JSONField(default=list, blank=True)
 
     class Meta:
@@ -71,6 +74,37 @@ class Location(UUIDModel):
 
     def __str__(self):
         return self.name
+
+    def distance_to(self, other: "Location") -> float:
+        import math
+
+        return math.hypot(self.coord_x - other.coord_x, self.coord_y - other.coord_y)
+
+
+class Item(UUIDModel):
+    """Significant story artifacts, weapons, keys, or relics tracked across the narrative."""
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="items")
+    name = models.CharField(max_length=150, db_index=True)
+    description = models.TextField(blank=True, default="")
+    current_holder = models.ForeignKey(
+        Character, null=True, blank=True, on_delete=models.SET_NULL, related_name="held_items"
+    )
+    current_location = models.ForeignKey(
+        Location, null=True, blank=True, on_delete=models.SET_NULL, related_name="stored_items"
+    )
+    is_destroyed = models.BooleanField(default=False)
+    destroyed_at_chapter = models.PositiveIntegerField(null=True, blank=True)
+    status_notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["project", "name"])]
+
+    def __str__(self):
+        status = " (Destroyed)" if self.is_destroyed else ""
+        return f"{self.name}{status}"
+
 
 
 class Faction(UUIDModel):

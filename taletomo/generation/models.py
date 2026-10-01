@@ -37,6 +37,10 @@ class DraftArtifact(UUIDModel):
     class Meta:
         ordering = ["chapter", "-version_number"]
         unique_together = ("chapter", "version_number")
+        indexes = [
+            models.Index(fields=["chapter", "version_number"]),
+            models.Index(fields=["chapter", "status"]),
+        ]
 
     def __str__(self):
         return f"Ch {self.chapter.chapter_number} Draft v{self.version_number} ({self.status})"
