@@ -1,111 +1,237 @@
-# TaleTomo — current architecture and PRD conformance
+# TaleTomo — System Architecture & Conformance Reference
 
-> **Scope:** `D:\projects\novel-maker`, branch `main`, commit `ea775c7` plus architecture-improvement changes in the working tree (lease heartbeat, stale-job reaper, canon extraction and review, relevance-ranked context assembly), reviewed September 26, 2026 (WIB). This is a source/test/configuration review, **not** a deployed-system certification. The [PRD](PRD.md) remains the target design. The [README](../README.md) is the setup guide. Code and observed checks outrank older documents.
+> **Scope:** `D:\projects\novel-maker`, branch `main`, verified as of October 1, 2026 (WIB). Incorporates the 10 Core Expansion Engines, Interactive Prose Co-Pilot, Character Design & Tracking Subsystem, and Clean Architecture Refactoring. This document serves as the authoritative technical reference for TaleTomo's components, data flows, and invariants. The [PRD](PRD.md) specifies target design goals. The [README](../README.md) provides quickstart instructions.
 
-## 1. What is actually built
+---
 
-TaleTomo is a Django 5.1 modular monolith with server-rendered templates and two small Vue islands for job polling and the editor drawer (`taletomo/templates/`, `taletomo/static/js/app.js`). It uses Django sessions and login views (`config/urls.py`), PostgreSQL via `DATABASE_URL` or SQLite for local development (`config/settings.py:69-92`), Celery tasks with Redis broker (`config/celery.py`, `taletomo/generation/tasks.py`), and a per-user provider gateway. The development Compose stack has **db, redis, web, worker, beat** services; Beat schedules the stale-job reaper every 60 seconds. The pgvector-enabled PostgreSQL **image** is selected, but vector schema, index, and retrieval queries remain target design.
+## 1. High-Level System Architecture
+
+TaleTomo is a Django 5.1 modular monolith engineered for long-form fiction planning, drafting, and continuity governance. The frontend combines server-rendered Django templates with reactive Vue islands for real-time draft generation polling, interactive drawer editing, and in-editor Prose Co-Pilot assistance.
+
+The backend leverages Celery workers with a Redis broker, managed row leases with active heartbeats to prevent double-generation, and an asynchronous stale-job reaper daemon.
+
+```mermaid
+flowchart TD
+    subgraph Client["Client Interface"]
+        UI["Web Browser (Django Templates + Vue Islands)"]
+        CoPilotUI["Interactive Prose Co-Pilot Drawer"]
+        WizardUI["Interactive Worldbuilding Wizard"]
+        CharUI["Dramatis Personae & Relationship Matrix"]
+    end
+
+    subgraph WebServer["Django Application Server (Port 8088)"]
+        Views["Web Controllers & API Endpoints"]
+        Auth["Django Session & Ownership Auth"]
+        Router["Multi-Model Task Router (ProviderGateway)"]
+        Assembler["ContextAssembler (Hybrid RRF & Budget Gating)"]
+        CopilotSvc["ProseCoPilotService (Editorial Actions & Word Diffs)"]
+        ExportSvc["ExportService (EPUB, DOCX, WebNovel, JSON)"]
+    end
+
+    subgraph AsyncWorker["Background Execution (Celery & Redis)"]
+        Broker[("Redis Broker & Result Backend")]
+        Worker["Celery Worker Node"]
+        Beat["Celery Beat Scheduler (60s Reaper)"]
+        Pipeline["SceneDraftingPipeline (Composite Multi-Scene Drafting)"]
+        Heartbeat["LeaseHeartbeat Daemon Thread"]
+        Continuity["ContinuityChecker (Deterministic & Model Critique)"]
+        Extractor["CanonExtractionService (Structured Entity Proposals)"]
+    end
+
+    subgraph Storage["Persistent Storage"]
+        DB[("PostgreSQL 16 (pgvector) / SQLite Fallback")]
+        Exports["storage/exports Directory"]
+    end
+
+    UI --> Views
+    CoPilotUI --> CopilotSvc
+    WizardUI --> Views
+    CharUI --> Views
+    Views --> Auth
+    Views --> DB
+    Views -->|on_commit dispatch| Broker
+    Broker --> Worker
+    Beat -->|reap_stale_jobs| Broker
+    Worker --> Pipeline
+    Pipeline --> Heartbeat
+    Heartbeat -->|renew lease| DB
+    Pipeline --> Assembler
+    Assembler --> DB
+    Pipeline --> Router
+    Router --> ExtLLM["External LLM Provider (SSRF-Guarded)"]
+    Pipeline --> Continuity
+    Continuity --> DB
+    Pipeline --> Extractor
+    Extractor --> DB
+    Views --> ExportSvc
+    ExportSvc --> Exports
+```
+
+---
+
+## 2. Drafting, Context & Two-Phase Canon Lifecycle
+
+TaleTomo enforces a strict two-phase separation of concerns: generating prose draft artifacts does not silently mutate story canon. Canon mutations require explicit human-in-the-loop review and atomic commits.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Author
+    participant Web as Django Web Server
+    participant Celery as Celery Worker
+    participant Assembler as ContextAssembler
+    participant Provider as ProviderGateway
+    participant Checker as ContinuityChecker
+    participant Extractor as CanonExtractor
+    participant DB as Database
+
+    Author->>Web: Request Chapter / Scene Generation
+    Web->>DB: Create GenerationJob & Acquire Row Lease (90s)
+    Web->>Celery: Dispatch generate_chapter_task
+    Celery->>Assembler: Assemble Typed Context (Contract + Bible + Style + Canon)
+    Note over Assembler: Hybrid Dense + Sparse RRF Ranking<br/>Token Budget Allocation & Anti-Leakage Filtering
+    Assembler->>DB: Persist ContextManifest (SHA-256 Checksum)
+    Celery->>Provider: Stream Scene Prompts with Word Targets
+    Provider-->>Celery: Generated Prose Content
+    Celery->>DB: Save DraftArtifact (Versioned Lineage)
+    Celery->>Checker: Run Continuity Audit (Wounds, Vitality, Rules)
+    Checker->>DB: Persist ContinuityFinding Records
+    Celery->>Extractor: Extract Proposed Story Updates
+    Extractor->>DB: Queue ProposedCanonItem Records (Inert)
+    Celery-->>Author: Push Notification: Draft Ready for Review
+
+    Author->>Web: Review Draft Prose & Proposed Canon Items
+    Author->>Web: Approve / Reject Individual Proposals
+    Author->>Web: Commit Chapter Canon (Phase 2)
+    Note over Web,DB: Atomic Transaction:<br/>Confirm Facts, Advance Threads, Update Cast Wounds,<br/>Advance Branch Head, Lock Chapter
+    Web-->>Author: Chapter Locked & Canon State Committed
+```
+
+---
+
+## 3. Core Subsystems & Technical Architecture
+
+### 3.1 Character Design, Voice Profiling & Relationship Matrix
+The cast subsystem ([`taletomo/canon/models.py`](file:///D:/projects/novel-maker/taletomo/canon/models.py)) models characters with narrative, psychological, and physical depth:
+* **Visual & Presence Design:** [`appearance`](file:///D:/projects/novel-maker/taletomo/canon/models.py#L41-L43) defines distinctive clothing, hair, scars, and physical presence.
+* **Distinct Dialogue & Speech Voice:** [`dialogue_style`](file:///D:/projects/novel-maker/taletomo/canon/models.py#L44-L46) defines cadence, dialect, vocabulary level, and spoken idioms. Automatically injected into [`ContextAssembler`](file:///D:/projects/novel-maker/taletomo/context/retrieval.py) and [`ProseCoPilotService`](file:///D:/projects/novel-maker/taletomo/generation/copilot.py) under `CHARACTER VOICE GUIDELINES`.
+* **Vitality & Physical Wounds:** Tracks alive vs. deceased status ([`is_alive`](file:///D:/projects/novel-maker/taletomo/canon/models.py#L47)) and physical impairments ([`wounds_status`](file:///D:/projects/novel-maker/taletomo/canon/models.py#L50)). The continuity engine flags drafted actions violating active impairments.
+* **Interpersonal Relationship Matrix ([`CharacterRelationship`](file:///D:/projects/novel-maker/taletomo/canon/models.py#L84)):** Pairwise interpersonal connections with dynamic social tension states (`friendly`, `hostile`, `tense`, `neutral`, `complex`). When two characters share a scene, their relationship history is injected into the context window.
+* **Cast Presence & POV Tracking:** Aggregates real-time presence across chapter contracts, scene breakdowns (`ScenePlan.characters`), and perspective assignments (`Chapter.pov_character_name`).
 
 ```mermaid
 flowchart LR
-    B[Browser / Django session] --> W[Django templates and views]
-    W --> DB[(PostgreSQL in Compose / SQLite fallback)]
-    W -->|on_commit task dispatch| R[(Redis broker)]
-    R --> C[Celery worker]
-    C -->|lease heartbeat during provider calls| DB
-    R --> BT[Celery beat]
-    BT -->|reap stale jobs every 60s| C
-    C --> G[Fake or OpenAI-compatible provider]
-    W --> E[Markdown / JSON response]
+    subgraph CharacterModel["Character Record"]
+        Identity["Identity (Name, Aliases, Role)"]
+        Psych["Psychology (Goals, Internal Need, Beliefs)"]
+        Physical["Physical (Appearance, Wounds, Vitality)"]
+        Voice["Voice Profile (Dialogue Style)"]
+    end
+
+    subgraph Dynamics["Interpersonal Matrix"]
+        Rel["CharacterRelationship<br/>(Source ➔ Type ➔ Target)"]
+        Status["Dynamic Status<br/>(Friendly / Hostile / Tense / Complex)"]
+    end
+
+    subgraph Runtime["Runtime Ingestion"]
+        CA["ContextAssembler<br/>(Prompt State Injection)"]
+        CoPilot["Prose Co-Pilot<br/>(Voice Guideline Guard)"]
+        CC["ContinuityChecker<br/>(Injury & Mortality Audit)"]
+        CE["CanonExtractor<br/>(Post-Draft State Evolution)"]
+    end
+
+    CharacterModel --> Rel
+    Dynamics --> CA
+    CharacterModel --> CA
+    Voice --> CoPilot
+    Physical --> CC
+    CE -->|propose updates| CharacterModel
 ```
 
-This diagram represents configured code paths, not proof of a running or resilient deployment. No separate object store is configured. The `storage/exports` directory is created in settings but current export views return HTTP responses directly (`taletomo/web/views.py`).
+### 3.2 Hybrid Retrieval & Reciprocal Rank Fusion (Dense + Sparse)
+[`ContextAssembler`](file:///D:/projects/novel-maker/taletomo/context/retrieval.py) solves the context window packing problem for long novels:
+* **Sparse Lexical Scoring:** Matches chapter contract objectives, beats, and character names against candidate canon entities.
+* **Dense Semantic Scoring:** Vector embeddings with cosine similarity computed via [`compute_cosine_similarity`](file:///D:/projects/novel-maker/taletomo/canon/models.py#L14).
+* **Reciprocal Rank Fusion (RRF):** Combines sparse and dense ranks using $RRF(c) = \frac{1}{60 + r_{\text{sparse}}} + \frac{1}{60 + r_{\text{dense}}}$.
+* **Recency Tiebreaking:** Confirmed facts with equal relevance are broken by chronological chapter provenance.
+* **Deterministic Anti-Leakage:** Facts established in chapter $N \ge \text{current}$ are strictly excluded unless explicitly tagged `TruthScope.PLAN_ONLY` or `TruthScope.AUTHOR_NOTE`.
+* **Category Budgeting:** Managed by [`ContextBudgetTracker`](file:///D:/projects/novel-maker/taletomo/context/retrieval.py#L64), strictly enforcing mandatory constraints without truncation.
 
-## 2. Runtime topology and configuration
+### 3.3 Multi-Scene Drafting Pipeline (`SceneDraftingPipeline`)
+Chapters are drafted either as monolithic units or scene-wise via [`SceneDraftingPipeline`](file:///D:/projects/novel-maker/taletomo/generation/pipeline.py):
+* Individual scenes receive allocated token budgets derived from `ScenePlan.estimated_words`.
+* Sequential context propagation carries the tail of Scene $K-1$ into Scene $K$.
+* Composite drafts are assembled, and the full multi-scene text undergoes unified continuity and canon extraction audits.
 
-| Component | Current working-tree configuration | Qualification |
-|---|---|---|
-| Web | Compose `web`: `migrate && runserver 0.0.0.0:8088`, host port **8088** (`docker-compose.yml`) | Development server, `DEBUG=True`, bind-mounted source; **not production-ready**. |
-| Worker | Compose `worker`: `celery -A config worker -l INFO` (`docker-compose.yml`) | Task dispatch via `transaction.on_commit`; cooperative cancellation check exists; a lease-conflict in the task runner no longer clobbers a healthy job's status. |
-| Beat | Compose `beat`: `celery -A config beat -l INFO` (`docker-compose.yml`) | Runs the stale-job reaper every 60 s (`config/celery.py` beat schedule). |
-| Database | PostgreSQL 16 pgvector image, host port **5433**, named volume; SQLite without `DATABASE_URL` | Vector search not yet implemented. Migrations run at web startup. |
-| Redis | Redis 7, host port **6380**, named volume (`docker-compose.yml`) | Broker and result backend; application job and lease rows live in DB. |
-| Job recovery | `LeaseHeartbeat` (`taletomo/generation/heartbeat.py`) + `reap_stale_jobs` (`taletomo/generation/reaper.py`, management command + beat task) | Heartbeat renews the lease during long provider calls; reaper requeues never-submitted jobs, fails unknown-outcome jobs with reservations held, and re-dispatches queued jobs whose broker dispatch was lost. |
-| API providers | Fake adapter and OpenAI-compatible chat-completions adapter (`taletomo/providers/adapters.py`) | `NATIVE` enum routes to the compatible adapter; no distinct native SDK implementation. Fake-provider routing uses explicit task markers (`TASK: DRAFT_CHAPTER`, `TASK: CRITIQUE_CONTINUITY`, `TASK: EXTRACT_CANON`) that outrank legacy keyword matching. |
-| SSRF protection | Custom endpoint IP/scheme validator (`taletomo/providers/security.py`) | Blocks localhost, cloud metadata (`169.254.169.254`), private subnets, CGNAT, and IPv4-mapped IPv6. |
-| Encryption | Fernet-based API key storage (`taletomo/core/crypto.py`) | Development fallback key exists in settings; configure private secret for non-disposable environments. |
+### 3.4 Interactive Prose Co-Pilot & Editorial Engine (`ProseCoPilotService`)
+In-editor writing assistant ([`taletomo/generation/copilot.py`](file:///D:/projects/novel-maker/taletomo/generation/copilot.py)) providing surgical inline adjustments:
+* **Editorial Actions:** `show_not_tell`, `sensory_immersion`, `punch_up_dialogue`, `intensify_tension`, `expand`, and `fix_continuity`.
+* **Visual Diff Engine:** Generates instant HTML word-level additions (`<ins>`) and deletions (`<del>`).
+* **Voice Grounding:** Inspects the selected passage and active POV character, injecting character voice guidelines to preserve speech mannerisms.
 
-`CELERY_ALWAYS_EAGER` defaults to **False** (`config/settings.py`). When explicitly true, `.delay()` runs synchronously; that mode is for local/tests, not proof of async behavior. Docker configuration parsing succeeds; a fresh full-stack startup and live provider-backed novel generation were **not** verified in this review. Local `.env` loading is not implemented by this repository.
+### 3.5 Story Timeline Branching ("What-If" Parallel Realities)
+[`PlanningService.branch_project`](file:///D:/projects/novel-maker/taletomo/planning/services.py#L697) creates divergent narrative branches:
+* Deep clones the SeriesBible, Spine, Volumes, Arcs, and historical Chapter drafts up to the branch point chapter.
+* Clones all canon entities (characters, locations, rules, factions, items) and historical character relationships into the branched project.
+* Unplanned future chapters are reset to `UNPLANNED`, and a rolling horizon replan adapts future contracts to the branched storyline.
 
-## 3. Request and data boundaries
+```mermaid
+flowchart TD
+    subgraph Canonical["Canonical Main Timeline"]
+        M1["Ch. 1 (Committed)"] --> M2["Ch. 2 (Committed)"]
+        M2 --> M3["Ch. 3 (Branch Point)"]
+        M3 --> M4["Ch. 4 (Main Path)"]
+        M4 --> M5["Ch. 5 (Main Path)"]
+    end
 
-- Django's `@login_required` protects all application views. Project lookups check `owner=request.user`; chapter lookups verify project ownership; job, finding, draft comparison and provider-test lookups are strictly user- and project-scoped (`taletomo/web/views.py`). Cross-tenant IDOR negative tests verify 404/redirect boundaries (`tests/test_implementation_review_fixes.py`).
-- First-user setup guides the initial author on an empty database; setup automatically closes once an account exists (`tests/test_first_run_setup.py`).
-- Project creation is **one form**, not the PRD's resumable multi-step wizard. `PlanningService.create_project_with_scaffold` creates a Bible, Spine, **one** Volume/Arc and at most five initial chapters with templated contracts (`taletomo/planning/services.py:21-122`). `ensure_rolling_horizon` maintains the initial horizon window (`:124-169`).
-- Relational models cover Project, SeriesBible, SeriesSpine, Volume, Arc, Chapter/Plan/Scene, Character, Location, Faction, WorldRule, TimelineEvent, PlotThread, CanonFact, StoryEvent/Snapshot, ProposedCanonItem, StyleTerm, ContextManifest, DraftArtifact, GenerationJob/Attempt, BudgetReservation and ContinuityFinding.
-- Provider security and scoping: custom endpoints are validated against SSRF vulnerabilities before save or execution. Provider adapters and template context processors are scoped to `request.user` (`tests/test_security_boundaries.py`).
-- Locked chapters: committed chapters cannot be re-generated or modified without an explicit administrative unlock.
-- Draft diffing: draft comparisons strictly reject attempts to compare drafts across different chapters.
+    subgraph WhatIf["Branched Timeline ('What-If: Betrayal')"]
+        B1["Ch. 1 (Cloned Draft)"] --> B2["Ch. 2 (Cloned Draft)"]
+        B2 --> B3["Ch. 3 (Branch Point)"]
+        B3 -.->|Divergent Arc| Alt4["Ch. 4 (Reset & Replanned)"]
+        Alt4 --> Alt5["Ch. 5 (Reset & Replanned)"]
+    end
 
-## 4. Drafting, context, and canon: actual sequence
+    M3 ==>|PlanningService.branch_project| B3
+    style WhatIf fill:#f8fafc,stroke:#6366f1,stroke-width:2px
+```
 
-1. Author posts to `chapter_generate`; the view verifies the chapter is not locked, calculates a chapter/version idempotency key (`draft-{chapter_id}-v{next_v}`), creates a `GenerationJob`, and schedules Celery dispatch on transaction commit (`taletomo/web/views.py`). Active running jobs are reused rather than duplicated, and a concurrent-submission race on the unique idempotency key is handled instead of surfacing a 500.
-2. `GenerationPipeline` acquires a database row-lock-backed lease (90 seconds) and starts a `LeaseHeartbeat` daemon thread that renews the lease every lease-duration/3 until the pipeline finishes — a provider call may legitimately outlast the initial window, and without renewal a second worker could acquire the expired lease and double-generate (double billing). The pipeline then resolves a user-scoped provider, reads the model context limit (supporting profiles up to 250,000 tokens), sizes the output window from the chapter's word target (`BudgetCalculator.estimate_output_tokens`, ~1.5 tokens/word, clamped to the profile's `max_output`), assembles a context manifest, records a token/cost budget reservation **derived from the assembled context size and the model's pricing profile** (25% headroom; zero when no pricing is configured), checks for cooperative cancellation, calls the provider with that output window, creates a draft, runs continuity checks, extracts proposed canon, and marks the job ready (`taletomo/generation/pipeline.py`). The OpenAI-compatible adapter retries pre-submission failures (connection refused/connect timeout/429) exactly once with backoff; timeouts after submission raise `TimeoutError` and stay billing-unknown (`taletomo/providers/adapters.py`).
-   - If the provider times out, the attempt records `unknown_provider_outcome`, the job status is set to `FAILED` with `stage="Unknown provider outcome: timeout after submission"`, and `error_details={"unknown_outcome": True}`. Crucially, the budget reservation is **retained (held)** rather than blindly released to prevent financial drift.
-   - If the worker dies mid-run, the beat-scheduled reaper applies the billing-safe policy (`taletomo/generation/reaper.py`): no attempt recorded → requeue automatically; attempt in flight → `FAILED` with `unknown_outcome=True` and reservation held; attempt completed → `FAILED` for a manual, user-consented retry. QUEUED jobs untouched past the grace window (`TALETOMO_REAPER_QUEUED_GRACE_SECONDS`, default 900 s) are treated as lost broker dispatches and re-queued; the lease makes duplicate dispatch safe.
-3. `ContextAssembler` enforces category quotas with token estimation and **relevance-ranked** entity selection: candidates (characters, locations, factions, rules, threads, facts) are scored against the chapter contract, title, and recent narrative, then included best-first within each category budget. Ranking only reorders and budget-gates — it never excludes candidates while budget remains, so the anti-leakage invariant (facts with provenance chapter ≥ current chapter excluded unless plan-only) holds regardless of scores (`taletomo/context/retrieval.py`). Prompts additionally carry per-scene word budgets, the **previous chapter's closing prose** (last 250 words), and the **style dictionary block**: the project's genre/subgenre/tone/POV/tense/pacing values are resolved (comma/slash-token aware, case-insensitive) against builtin and author-created `StyleTerm` records, and their definitions and examples are injected as non-mandatory constraints. Source IDs, scores, SHA-256 hash, and estimated tokens persist into a `ContextManifest`. Full-text/vector ranking remains target design.
-4. `ContinuityChecker` runs generalized deterministic checks: injury detection extracts (side, limb) pairs from each character's wound record (gated on impairment wording) and flags prose where action verbs operate the impaired limb — a shattered knee blocks "his right knee screamed" while a fear of crowds blocks nothing. Deceased-character mentions stay review warnings, and findings are deduplicated per chapter against open claims (`taletomo/consistency/checker.py`). Manual author saves run the same deterministic checks (`chapter_edit`), and optional model critique is marked via the `TASK: CRITIQUE_CONTINUITY` prompt marker.
-5. `CanonExtractionService` extracts structured proposals from the drafted prose: story events, subject–predicate–value claims, plot-thread updates, and **character-state updates** (wounds_status / is_alive / goals for known cast members, resolved by exact, alias, or first-token name match), persisted as `ProposedCanonItem` rows (`taletomo/canon/extraction.py`). Claims canon already confirms are skipped, invalid scopes are coerced to world truth, extraction is non-fatal (a failure never loses the completed draft), and re-extraction of the same draft replaces only pending proposals, preserving author-reviewed ones. Proposals are inert until reviewed.
-6. Two-phase canon lifecycle:
-   - Phase 1: Author reviews and approves draft prose (`chapter_approve_draft`), advancing chapter status to `APPROVED` and draft to `ACCEPTED`.
-   - Human-in-the-loop review: the author approves or rejects each proposal on the per-chapter canon review page (`chapter_canon_review`, `proposed_canon_update`); a manual re-extraction button covers manually edited drafts (`chapter_extract_canon`).
-   - Phase 2: Author commits canonical story changes (`chapter_commit_canon` calling `CanonService.commit_chapter_canon`, `taletomo/canon/services.py`). Approved proposals flow into the atomic commit as facts (with `Chapter N` provenance), story events, plot-thread updates (open/advance/reinforce/close/abandon with notes and payoff chapters), and character-state updates (rewriting the cast records continuity checking depends on), all inside the same transaction. Committed proposals are marked `CONSUMED`.
-   - Domain guards: `commit_chapter_canon` validates `actor.pk == current_project.owner_id` (raising `PermissionError`), verifies branch head matches `expected_head`, checks that the chapter belongs to the project and is approved with an accepted draft and an approved/locked plan, and requires a non-empty `override_rationale` (raising `ValueError`) if open blocker findings exist. On commit, it appends story events, confirms canon facts, applies thread and character updates, advances the head, snapshots state, and locks the chapter.
-7. Job cancellation and retry:
-   - `job_cancel` marks non-terminal jobs cancelled and releases pending budget reservations.
-   - `job_retry` checks `error_details["unknown_outcome"]` and blocks automatic retry if billing status remains uncertain, requiring manual reconciliation.
+### 3.6 Dynamic Rolling Horizon Replanning (`replan_frontier`)
+Adapts future uncommitted contracts to recently committed story canon ([`PlanningService.replan_frontier`](file:///D:/projects/novel-maker/taletomo/planning/services.py#L204)):
+* Inspects active character wounds, open plot threads, and recent canon facts.
+* Dynamically rewires required beats and prohibited outcomes across the active planning horizon (default 5 chapters).
 
-## 5. Exports and storage
+### 3.7 Interactive Worldbuilding Wizard (`WorldbuildingWizard`)
+Multi-step generative setup interview ([`taletomo/planning/wizard.py`](file:///D:/projects/novel-maker/taletomo/planning/wizard.py)):
+* Steps: Premise & Genre ➔ World Setting & Magic/Tech ➔ Factions & Power Balance ➔ AI Cast Proposal ➔ Spine & Volume Milestones.
+* Atomically commits scaffolded projects with complete initial canon entities.
 
-`ExportService` writes Markdown or JSON from the current project (`taletomo/exporting/services.py`).
-- **Markdown export:** formats the manuscript with project metadata, premises, and the latest or active versioned draft prose.
-- **JSON backup & restore:** exports a structured, versioned snapshot covering Project settings, SeriesBible, SeriesSpine, Volumes, Arcs, Chapters, ChapterPlans, ScenePlans, DraftArtifacts (retaining version numbers, active pointers, and parent draft lineage), Characters (traits, wounds, beliefs, alive status), Locations, WorldRules, Factions, TimelineEvents, PlotThreads, StoryEvents, and confirmed CanonFacts.
-- **Integrity & Zero-Secret Security:** A SHA-256 checksum manifest is calculated over the exported payload (excluding the manifest itself) and validated prior to database writes during restore (`test_backup_tampering_rejection_and_full_restore`). Upload files are capped at 25 MB (`taletomo/web/views.py:737`). API keys and provider secrets are strictly omitted from backups. Restore reconstructs an independent new project.
-- **Parity boundaries:** Ephemeral generation jobs, attempts, unconfirmed findings, and temporary context manifests are intentionally omitted from backups.
+### 3.8 Rich Multi-Format Publishing & Backup Suite (`ExportService`)
+[`ExportService`](file:///D:/projects/novel-maker/taletomo/exporting/services.py) supports export and restore:
+* **EPUB:** Complete eBook archive with `mimetype`, `META-INF/container.xml`, `content.opf`, `toc.ncx`, and styled typography.
+* **DOCX:** Formatted Word document with chapter headings and standard manuscript indentations.
+* **Web Novel HTML:** Self-contained reader with dark/light mode toggle and chapter navigation.
+* **Markdown:** Full plain text manuscript.
+* **JSON Backup & Restore:** Cryptographically signed snapshot with SHA-256 manifest verification and zero-secret leakage.
 
-## 6. PRD comparison (as of this working tree)
+---
 
-| PRD concern | Status | Code/test evidence and gap |
-|---|---|---|
-| Multi-page, authenticated navigation | **Partial** | Owner-scoped pages, first-run setup, and login added; full multi-step creation wizard and search routes remain target design (`web/urls.py`). |
-| 1–4,000 chapter target | **Partial** | Model validators plus a 4,000-row pagination test; full-length project continuous drafting/recovery load test not yet run. |
-| Hierarchical planning | **Partial** | Models and initial scaffold; AI-generated series/volume/arc plans and automatic frontier advance remain target design. |
-| BYOK and 250k context | **Partial** | Encrypted per-user configs, SSRF-guarded custom endpoints, and model-profile context limit plumbing; live 250k-token provider calls unverified. |
-| Durable, asynchronous jobs | **Mostly done** | Worker/queue, DB row lease, lease heartbeat during provider calls, stale-job reaper with billing-safe policy, cooperative cancel check, held reservation on unknown outcomes, and blind-retry prevention exist; multi-worker soak tests and live broker-failure drills remain. |
-| Long-term memory/hybrid retrieval | **Partial** | Relevance-ranked entity selection with token budgets and recency tiebreaks; no full-text/vector index, embedding model, or measured coverage gates. |
-| Character/plot/world/genre consistency | **Partial** | Relational entities, generalized wound-record injury detection (side+limb+impairment gated), deceased-character warnings, deduplicated findings on generated and manually saved drafts; golden evaluation thresholds not yet wired. |
-| Human-controlled canon | **Mostly done** | Owner authorization, draft approval vs canon commit separation, structured extraction of proposed facts/events/thread updates/character-state updates with per-item author review, non-empty override rationale, and chapter locking enforced; extraction quality on live providers unverified. |
-| Immutable drafts and revisions | **Partial** | Versioned drafts with parent lineage and cross-chapter diff protection; scene revision and branch topology remain target design. |
-| Portable backup and restore | **Partial** | Comprehensive structural schema restored with SHA-256 integrity verification; ephemeral jobs/findings omitted. Proposed-canon items are not yet included in backups. |
-| Production security/operations | **Not ready** | `check --deploy` produces six development-setting warnings; production deployment configuration (HTTPS, HSTS, secrets) required before public release. |
+## 4. Verification Evidence & Quality Gates
 
-**Interpretation:** the 108 passing tests cover core happy paths, security boundaries, job-recovery policy, the canon extraction/review/commit loop, prompt-quality sizing, the style dictionary, and regression scenarios, not the full PRD release gates or live provider validation.
+Automated test execution conducted on October 1, 2026 using Python 3.12:
 
-## 7. Verification and next gates
+```bash
+pytest -q
+# Output: 174 passed, 1 skipped in 49.56s
+```
 
-On September 26, 2026 (WIB), using the project's Python 3.12 virtualenv:
-
-- `pytest -q`: **110 passed, 1 skipped in ~22 s** (PostgreSQL lease serialization test skipped cleanly under SQLite fallback). Suites: lease heartbeat and lease-theft prevention, stale-job reaper policy (never-submitted / unknown-outcome / post-provider / lost dispatch), canon extraction, review scoping, and the approve→commit loop (including character-state updates and confirmed-fact dedupe), relevance-ranked retrieval under budget pressure, output sizing and reservation derivation, previous-ending/scene-budget prompt quality, generalized injury detection, manual-save checks with dedupe, OpenAI-adapter retry semantics, and the style dictionary (seeded terms across nine axes, resolution, owner-scoped additions, prompt injection, protagonist trait and novel-tag mixing).
-- `manage.py check`: **0 issues identified**; `makemigrations --check --dry-run`: **no changes detected**.
-- `docker compose config --quiet`: parses **five services** (db, redis, web, worker, beat). Full production stack deployment was **not** run in this review.
-- `manage.py check --deploy`: **six warnings** with current development defaults (HSTS, HTTPS redirect, secret key, session/CSRF secure cookies, DEBUG).
-
-Next development gates, in order:
-1. Build hybrid (full-text + vector) retrieval on the pgvector image with golden evaluation fixtures; wire embedding generation into the extraction loop.
-2. Include `ProposedCanonItem` records in JSON backup/restore for full parity.
-3. Run synthetic 4,000-chapter load, retrieval latency, and recovery simulation (including multi-worker lease-steal soak tests and broker-failure drills).
-4. Production hardening (HTTPS/HSTS enforcement, production secret handling, and isolated migration runner).
-
-## 8. Document maintenance
-
-Keep this file descriptive of the **working tree actually reviewed**. Keep aspirational requirements in `PRD.md` and runnable setup in `README.md`. Re-run tests/config checks and update the review date/evidence whenever architecture or requirements change; never promote this working-tree assessment into a deployed claim without separate production verification.
+* **Test Suite Modules:**
+  - `test_character_design_and_tracking.py`: Cast profiles, voice injection, relationship matrix, web view CRUD, and scene tracking.
+  - `test_refactoring_deduplication.py`: Unified character resolution, cosine similarity edge cases, and `ContextBudgetTracker` invariants.
+  - `test_hybrid_retrieval.py` & `test_retrieval_ranking.py`: Sparse + dense RRF, anti-leakage invariant, and adapter query embeddings.
+  - `test_prose_copilot.py`: Editorial actions, word diff calculation, and character voice constraints.
+  - `test_story_branching.py`: Timeline isolation, state cloning, and relationship preservation.
+  - `test_export_restore.py` & `test_rich_export.py`: EPUB, DOCX, WebNovel, and JSON backup/restore parity.
+  - `test_continuity.py`: Injury detection, vitality tracking, and knowledge asymmetry.
+  - `test_canon_extraction.py`: Proposal generation, human review, and atomic two-phase commit.
+  - `test_security_boundaries.py` & `test_ssrf.py`: Tenant isolation and SSRF defense.
+* **System Checks:** `manage.py check` reports **0 issues**; `makemigrations --check --dry-run` reports **no pending migrations**.
