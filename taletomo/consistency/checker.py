@@ -340,6 +340,8 @@ class ContinuityChecker:
             item_name_low = item.name.lower()
             if item_name_low in prose_lower:
                 if item.is_destroyed:
+                    if item.destroyed_at_chapter and chapter.chapter_number <= item.destroyed_at_chapter:
+                        continue
                     for m in re.finditer(rf"\b{re.escape(item_name_low)}\b", prose_lower):
                         start = max(0, m.start() - 60)
                         end = min(len(prose_lower), m.end() + 60)

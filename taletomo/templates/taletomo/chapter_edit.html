@@ -267,12 +267,12 @@
         <h2>Story inspector</h2>
       </div>
       <div class="inspector-tabs" role="tablist" aria-label="Inspector panels">
-        <button type="button" role="tab" @click="activeTab = 'checks'" :aria-selected="activeTab === 'checks'" :class="['inspector-tab', activeTab === 'checks' ? 'is-active' : '']">Checks</button>
-        <button type="button" role="tab" @click="activeTab = 'context'" :aria-selected="activeTab === 'context'" :class="['inspector-tab', activeTab === 'context' ? 'is-active' : '']">Context</button>
-        <button type="button" role="tab" @click="activeTab = 'notes'" :aria-selected="activeTab === 'notes'" :class="['inspector-tab', activeTab === 'notes' ? 'is-active' : '']">Notes</button>
+        <button type="button" id="tab-btn-checks" role="tab" class="inspector-tab is-active" aria-selected="true" onclick="switchInspectorTab('checks')">Checks</button>
+        <button type="button" id="tab-btn-context" role="tab" class="inspector-tab" aria-selected="false" onclick="switchInspectorTab('context')">Context</button>
+        <button type="button" id="tab-btn-notes" role="tab" class="inspector-tab" aria-selected="false" onclick="switchInspectorTab('notes')">Notes</button>
       </div>
 
-      <div v-show="activeTab === 'checks'" class="inspector-content">
+      <div id="tab-panel-checks" class="inspector-content" style="display: block;">
         <div class="inspector-section-heading">
           <h3>Continuity checks</h3>
           <a href="{% url 'taletomo:chapter_continuity' project.id chapter.id %}">All</a>
@@ -295,13 +295,21 @@
         {% endif %}
       </div>
 
-      <div v-show="activeTab === 'context'" class="inspector-content" style="display: none;">
+      <div id="tab-panel-context" class="inspector-content" style="display: none;">
         <div class="inspector-context-group">
           <h3>Characters in view</h3>
           <ul>
             {% for c in characters %}
               <li><strong>{{ c.name }}</strong><span>{{ c.role }}{% if c.wounds_status %} · {{ c.wounds_status }}{% endif %}</span></li>
             {% empty %}<li class="inspector-muted">No characters registered yet.</li>{% endfor %}
+          </ul>
+        </div>
+        <div class="inspector-context-group">
+          <h3>Key Artifacts & Items</h3>
+          <ul>
+            {% for it in items %}
+              <li><strong>{{ it.name }}</strong><span>{% if it.is_destroyed %}<span class="badge badge-blocker">Destroyed Ch {{ it.destroyed_at_chapter }}</span>{% else %}<span class="badge badge-success">Intact</span>{% endif %}{% if it.current_holder %} · {{ it.current_holder.name }}{% endif %}</span></li>
+            {% empty %}<li class="inspector-muted">No special items registered.</li>{% endfor %}
           </ul>
         </div>
         <div class="inspector-context-group">
@@ -313,7 +321,7 @@
         </div>
       </div>
 
-      <div v-show="activeTab === 'notes'" class="inspector-content" style="display: none;">
+      <div id="tab-panel-notes" class="inspector-content" style="display: none;">
         <div class="inspector-note">
           <p class="eyebrow">A SMALL REMINDER</p>
           <p>Check that Chapter {{ chapter.chapter_number }} fulfills its required beats before moving to the next chapter.</p>
@@ -462,6 +470,25 @@ function insertCopilotBelow() {
 function closeCopilotPreview() {
   const preview = document.getElementById("copilot-preview");
   if (preview) preview.style.display = "none";
+}
+
+function switchInspectorTab(tabName) {
+  document.querySelectorAll('.inspector-tab').forEach(b => {
+    b.classList.remove('is-active');
+    b.setAttribute('aria-selected', 'false');
+  });
+  document.querySelectorAll('.inspector-content').forEach(p => {
+    p.style.display = 'none';
+  });
+  const activeBtn = document.getElementById('tab-btn-' + tabName);
+  const activePanel = document.getElementById('tab-panel-' + tabName);
+  if (activeBtn) {
+    activeBtn.classList.add('is-active');
+    activeBtn.setAttribute('aria-selected', 'true');
+  }
+  if (activePanel) {
+    activePanel.style.display = 'block';
+  }
 }
 
 document.addEventListener("DOMContentLoaded", function() {

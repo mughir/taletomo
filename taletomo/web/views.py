@@ -788,6 +788,7 @@ def chapter_edit(request, project_id, chapter_id):
         "pending_canon_count": pending_canon_count,
         "characters": project.characters.all()[:8],
         "rules": project.rules.all()[:6],
+        "items": project.items.all()[:6],
     }
     return render(request, "taletomo/chapter_edit.html", context)
 
