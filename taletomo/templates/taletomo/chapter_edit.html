@@ -27,6 +27,7 @@
         {% csrf_token %}
         <button type="submit" class="btn btn-primary" {% if chapter.status == 'locked' %}disabled title="Chapter is locked"{% endif %}>Generate a draft</button>
       </form>
+      <a href="{% url 'taletomo:chapter_read' project.id chapter.id %}" class="btn btn-secondary" title="Read in distraction-free Reader Mode">📖 Read Mode</a>
       <a href="{% url 'taletomo:chapter_plan' project.id chapter.id %}" class="btn btn-secondary">Chapter contract</a>
       <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-quiet">All chapters</a>
     </div>
@@ -129,7 +130,7 @@
               <span style="font-size: 1.25rem;">✨</span>
               <div>
                 <strong style="color: var(--color-text-emphasis, #0f172a);">Interactive Prose Co-Pilot</strong>
-                <p style="margin: 0; font-size: 0.8rem; color: var(--color-text-muted, #64748b);">Highlight text in the manuscript, then choose an editorial transformation:</p>
+                <p style="margin: 0; font-size: 0.8rem; color: var(--ink-soft);">Highlight text in the manuscript, then choose an editorial transformation:</p>
               </div>
             </div>
             <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
