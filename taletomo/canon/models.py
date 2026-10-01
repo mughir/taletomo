@@ -38,6 +38,12 @@ class Character(UUIDModel):
     traits = models.JSONField(default=list, blank=True)
     goals = models.TextField(blank=True, default="")
     internal_need = models.TextField(blank=True, default="")
+    appearance = models.TextField(
+        blank=True, default="", help_text="Physical appearance, distinctive features, clothing, and presence"
+    )
+    dialogue_style = models.TextField(
+        blank=True, default="", help_text="Speech patterns, vocabulary, dialect, cadence, and typical idioms"
+    )
     wounds_status = models.TextField(
         blank=True, default="", help_text="Current physical wounds, injuries, or status impairments"
     )
@@ -78,6 +84,43 @@ class Character(UUIDModel):
                 seen.add(low)
                 deduped.append(v)
         return deduped
+
+
+class CharacterRelationship(UUIDModel):
+    """Dynamic relationship, interpersonal history, and social tension between two characters."""
+
+    class DynamicStatus(models.TextChoices):
+        FRIENDLY = "friendly", "Friendly / Cooperative"
+        HOSTILE = "hostile", "Hostile / Antagonistic"
+        TENSE = "tense", "Tense / Suspicious"
+        NEUTRAL = "neutral", "Neutral / Professional"
+        COMPLEX = "complex", "Complex / Shifting"
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="character_relationships"
+    )
+    source_character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="relationships_from"
+    )
+    target_character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="relationships_to"
+    )
+    relationship_type = models.CharField(
+        max_length=60, help_text="e.g. Rival, Mentor, Ally, Sibling, Romantic, Estranged, Debtor"
+    )
+    description = models.TextField(blank=True, default="")
+    dynamic_status = models.CharField(
+        max_length=40,
+        choices=DynamicStatus.choices,
+        default=DynamicStatus.NEUTRAL,
+    )
+
+    class Meta:
+        ordering = ["source_character__name", "target_character__name"]
+        unique_together = ("source_character", "target_character")
+
+    def __str__(self):
+        return f"{self.source_character.name} -> {self.relationship_type} -> {self.target_character.name}"
 
 
 class Location(UUIDModel):

@@ -5,78 +5,382 @@
 {% block content %}
 <header class="page-head">
   <p class="eyebrow-pill">The cast</p>
-  <h1>Dramatis personae</h1>
-  <p>Manage cast, character wounds, traits, and status.</p>
+  <h1>Dramatis Personae &amp; Character Tracking</h1>
+  <p>Manage character design, speech voice, physical continuity, relationships, and scene presence.</p>
 </header>
 
 {% include "taletomo/_project_subnav.html" with active_tab="characters" %}
 
-<div class="split-grid">
-  <div>
-    <div class="card">
-      <div class="card-header">
-        <h2>Registered characters ({{ characters.count }})</h2>
-      </div>
+<!-- Tab navigation -->
+<div class="tabs-nav" style="display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color, #e2e8f0); padding-bottom: 12px;">
+  <button type="button" class="btn btn-sm {% if not request.GET.tab or request.GET.tab == 'cast' %}btn-primary{% else %}btn-secondary{% endif %}" onclick="switchCharTab('cast')">👥 Cast &amp; Profiles ({{ total_characters_count }})</button>
+  <button type="button" class="btn btn-sm {% if request.GET.tab == 'relationships' %}btn-primary{% else %}btn-secondary{% endif %}" onclick="switchCharTab('relationships')">🔗 Relationships ({{ relationships.count }})</button>
+  <button type="button" class="btn btn-sm {% if request.GET.tab == 'tracker' %}btn-primary{% else %}btn-secondary{% endif %}" onclick="switchCharTab('tracker')">📊 Scene &amp; POV Tracker</button>
+</div>
 
-      {% if characters %}
-        <div class="stack">
-          {% for char in characters %}
-            <div class="item-card">
-              <div class="item-card-head">
-                <span class="item-title">{{ char.name }}</span>
-                <span class="badge badge-subtle">{{ char.get_role_display }}</span>
-              </div>
-              {% if char.wounds_status %}
-                <p class="item-danger-text"><strong>Physical wounds:</strong> {{ char.wounds_status }}</p>
-              {% endif %}
-              {% if char.goals %}
-                <p class="item-meta"><strong>Goals:</strong> {{ char.goals }}</p>
-              {% endif %}
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p class="text-muted">No characters registered yet.</p>
-      {% endif %}
-    </div>
+<!-- SECTION 1: CAST & PROFILES -->
+<div id="tab-cast" class="char-tab-content" style="{% if request.GET.tab and request.GET.tab != 'cast' %}display: none;{% endif %}">
+  <!-- Search & Role Filters -->
+  <div class="card" style="margin-bottom: 20px; padding: 16px;">
+    <form method="get" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;">
+      <input type="hidden" name="tab" value="cast">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted, #64748b);">Role:</span>
+        <a href="?tab=cast" class="badge {% if not role_filter %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">All ({{ total_characters_count }})</a>
+        <a href="?tab=cast&role=protagonist" class="badge {% if role_filter == 'protagonist' %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">Protagonist</a>
+        <a href="?tab=cast&role=antagonist" class="badge {% if role_filter == 'antagonist' %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">Antagonist</a>
+        <a href="?tab=cast&role=ally" class="badge {% if role_filter == 'ally' %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">Ally</a>
+        <a href="?tab=cast&role=neutral" class="badge {% if role_filter == 'neutral' %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">Neutral / Supporting</a>
+        <a href="?tab=cast&role=deceased" class="badge {% if role_filter == 'deceased' %}badge-danger{% else %}badge-subtle{% endif %}" style="text-decoration: none;">Deceased</a>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" name="q" value="{{ query }}" placeholder="Search name or alias..." class="form-control" style="width: 220px; padding: 6px 12px; font-size: 0.9rem;">
+        <button type="submit" class="btn btn-secondary btn-sm">Search</button>
+        {% if query or role_filter %}
+          <a href="?tab=cast" class="btn btn-outline btn-sm" style="text-decoration: none;">Clear</a>
+        {% endif %}
+      </div>
+    </form>
   </div>
 
-  <div>
-    <div class="card">
-      <div class="card-header">
-        <h2>Add character</h2>
+  <div class="split-grid">
+    <!-- Character Cards Column -->
+    <div>
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <h2>Characters ({{ characters|length }})</h2>
+        </div>
+
+        {% if characters %}
+          <div class="stack" style="gap: 16px;">
+            {% for char in characters %}
+              <div class="item-card" style="border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 16px;">
+                <div class="item-card-head" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                  <div>
+                    <span class="item-title" style="font-size: 1.15rem; font-weight: 700;">{{ char.name }}</span>
+                    <span class="badge badge-subtle" style="margin-left: 6px;">{{ char.get_role_display }}</span>
+                    {% if not char.is_alive %}
+                      <span class="badge badge-danger" style="margin-left: 4px;">Deceased</span>
+                    {% else %}
+                      <span class="badge badge-success" style="margin-left: 4px;">Alive</span>
+                    {% endif %}
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <a href="{% url 'taletomo:project_character_edit' project.id char.id %}" class="btn btn-outline btn-sm" style="padding: 4px 8px; font-size: 0.8rem; text-decoration: none;">Edit</a>
+                    <form method="post" action="{% url 'taletomo:project_character_delete' project.id char.id %}" onsubmit="return confirm('Delete character \'{{ char.name|escapejs }}\'? This cannot be undone.');" style="display: inline;">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-danger btn-sm" style="padding: 4px 8px; font-size: 0.8rem;">Delete</button>
+                    </form>
+                  </div>
+                </div>
+
+                <!-- Appearance & Scene Presence metrics -->
+                <div style="font-size: 0.85rem; color: var(--text-muted, #64748b); margin-bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap;">
+                  <span>🎬 <strong>{{ char.scene_count }}</strong> scenes</span>
+                  <span>🎯 <strong>{{ char.pov_count }}</strong> POV chapters</span>
+                  {% if char.chapter_appearances %}
+                    <span>📖 Chapters: {% for num in char.chapter_appearances %}<span class="badge badge-subtle" style="font-size: 0.75rem; padding: 2px 5px;">{{ num }}</span>{% if not forloop.last %} {% endif %}{% endfor %}</span>
+                  {% endif %}
+                </div>
+
+                {% if char.aliases %}
+                  <p class="item-meta" style="margin-bottom: 6px;">
+                    <strong>Aliases:</strong>
+                    {% for a in char.aliases %}
+                      <span class="badge badge-subtle" style="font-size: 0.75rem;">{{ a }}</span>
+                    {% endfor %}
+                  </p>
+                {% endif %}
+
+                {% if char.appearance %}
+                  <p style="font-size: 0.9rem; margin-bottom: 6px;"><strong>Appearance:</strong> {{ char.appearance }}</p>
+                {% endif %}
+
+                {% if char.dialogue_style %}
+                  <p style="font-size: 0.9rem; margin-bottom: 6px; color: var(--primary-color, #4338ca);"><strong>Voice &amp; Speech:</strong> <em>{{ char.dialogue_style }}</em></p>
+                {% endif %}
+
+                {% if char.wounds_status %}
+                  <p class="item-danger-text" style="color: #dc2626; font-size: 0.9rem; margin-bottom: 6px;">
+                    <strong>Physical Wounds:</strong> {{ char.wounds_status }}
+                  </p>
+                {% endif %}
+
+                {% if char.goals %}
+                  <p class="item-meta" style="font-size: 0.9rem; margin-bottom: 6px;"><strong>Goals:</strong> {{ char.goals }}</p>
+                {% endif %}
+
+                {% if char.internal_need %}
+                  <p class="item-meta" style="font-size: 0.9rem; margin-bottom: 6px;"><strong>Internal Arc / Flaw:</strong> {{ char.internal_need }}</p>
+                {% endif %}
+
+                {% if char.traits %}
+                  <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px;">
+                    {% for t in char.traits %}
+                      <span class="badge badge-subtle" style="font-size: 0.75rem;">#{{ t }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted" style="padding: 20px; text-align: center;">No characters match the current filters.</p>
+        {% endif %}
       </div>
-      <form method="post">
-        {% csrf_token %}
-        <div class="form-group">
-          <label for="id_char_name" class="form-label">Character name</label>
-          <input type="text" id="id_char_name" name="name" class="form-control" required placeholder="e.g. Alaric Vance">
-        </div>
+    </div>
 
-        <div class="form-group">
-          <label for="id_char_role" class="form-label">Role</label>
-          <select id="id_char_role" name="role" class="form-control">
-            <option value="protagonist">Protagonist</option>
-            <option value="antagonist">Antagonist</option>
-            <option value="ally">Ally</option>
-            <option value="neutral" selected>Neutral / Supporting</option>
-          </select>
+    <!-- Add Character Form Column -->
+    <div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Add New Character</h2>
         </div>
+        <form method="post" style="padding-top: 10px;">
+          {% csrf_token %}
+          <div class="form-group">
+            <label for="id_char_name" class="form-label">Character Name *</label>
+            <input type="text" id="id_char_name" name="name" class="form-control" required placeholder="e.g. Alaric Vance">
+          </div>
 
-        <div class="form-group">
-          <label for="id_char_wounds" class="form-label">Wounds &amp; impairments</label>
-          <input type="text" id="id_char_wounds" name="wounds_status" class="form-control" placeholder="e.g. Left hand injured and bandaged">
-          <small class="field-note">Continuity engine flags actions that violate these wounds.</small>
-        </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label for="id_char_role" class="form-label">Narrative Role</label>
+              <select id="id_char_role" name="role" class="form-control">
+                {% for val, label in character_roles %}
+                  <option value="{{ val }}" {% if val == 'neutral' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="id_char_alive" class="form-label">Vital Status</label>
+              <select id="id_char_alive" name="is_alive" class="form-control">
+                <option value="1" selected>Living</option>
+                <option value="0">Deceased</option>
+              </select>
+            </div>
+          </div>
 
-        <div class="form-group">
-          <label for="id_char_goals" class="form-label">Current goals</label>
-          <textarea id="id_char_goals" name="goals" class="form-control" rows="2"></textarea>
-        </div>
+          <div class="form-group">
+            <label for="id_char_aliases" class="form-label">Aliases / Nicknames (comma-separated)</label>
+            <input type="text" id="id_char_aliases" name="aliases" class="form-control" placeholder="e.g. The Silver Blade, Rick">
+          </div>
 
-        <button type="submit" class="btn btn-primary btn-cta btn-block">Add character <span class="btn-cta-chip" aria-hidden="true">→</span></button>
-      </form>
+          <div class="form-group">
+            <label for="id_char_appearance" class="form-label">Physical Appearance &amp; Features</label>
+            <textarea id="id_char_appearance" name="appearance" class="form-control" rows="2" placeholder="e.g. Tall, piercing amber eyes, jagged scar over left brow, wore a faded grey cloak."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="id_char_voice" class="form-label">Dialogue &amp; Speech Style</label>
+            <textarea id="id_char_voice" name="dialogue_style" class="form-control" rows="2" placeholder="e.g. Terse, low-voiced, uses Northern maritime metaphors, never uses contractions."></textarea>
+            <small class="field-note">Prose Co-Pilot and chapter generation respect this character voice.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="id_char_wounds" class="form-label">Physical Wounds &amp; Impairments</label>
+            <input type="text" id="id_char_wounds" name="wounds_status" class="form-control" placeholder="e.g. Left shoulder fractured, limping on right ankle">
+            <small class="field-note">Continuity engine flags drafted actions violating these injuries.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="id_char_goals" class="form-label">Current Goals &amp; Objectives</label>
+            <textarea id="id_char_goals" name="goals" class="form-control" rows="2" placeholder="e.g. Infiltrate the Sun Citadel to steal the starstone."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="id_char_internal_need" class="form-label">Internal Need / Arc Flaw</label>
+            <textarea id="id_char_internal_need" name="internal_need" class="form-control" rows="2" placeholder="e.g. Must learn to trust others before his obsession destroys his allies."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="id_char_traits" class="form-label">Personality Traits (comma-separated)</label>
+            <input type="text" id="id_char_traits" name="traits" class="form-control" placeholder="e.g. Pragmatic, Secretive, Fierce, Perceptive">
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-cta btn-block" style="margin-top: 16px;">
+            Add Character <span class="btn-cta-chip" aria-hidden="true">→</span>
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 </div>
+
+<!-- SECTION 2: INTERPERSONAL RELATIONSHIPS -->
+<div id="tab-relationships" class="char-tab-content" style="{% if request.GET.tab != 'relationships' %}display: none;{% endif %}">
+  <div class="split-grid">
+    <div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Registered Relationships ({{ relationships.count }})</h2>
+        </div>
+        {% if relationships %}
+          <div class="stack" style="gap: 12px;">
+            {% for rel in relationships %}
+              <div class="item-card" style="display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px;">
+                <div>
+                  <div style="font-size: 1rem; font-weight: 600;">
+                    <span>{{ rel.source_character.name }}</span>
+                    <span style="color: var(--primary-color, #4338ca); margin: 0 6px;">➔ {{ rel.relationship_type }} ➔</span>
+                    <span>{{ rel.target_character.name }}</span>
+                  </div>
+                  <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
+                    <span class="badge {% if rel.dynamic_status == 'friendly' %}badge-success{% elif rel.dynamic_status == 'hostile' %}badge-danger{% elif rel.dynamic_status == 'tense' %}badge-warning{% else %}badge-subtle{% endif %}">
+                      {{ rel.get_dynamic_status_display }}
+                    </span>
+                    {% if rel.description %}
+                      <span style="font-size: 0.85rem; color: var(--text-muted, #64748b);">{{ rel.description }}</span>
+                    {% endif %}
+                  </div>
+                </div>
+                <form method="post" action="{% url 'taletomo:project_character_relationship_delete' project.id rel.id %}" onsubmit="return confirm('Remove relationship?');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-outline btn-sm" style="color: #dc2626;">Remove</button>
+                </form>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted" style="padding: 20px; text-align: center;">No character relationships defined yet. Define connections below.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Add Relationship</h2>
+        </div>
+        {% if all_characters|length >= 2 %}
+          <form method="post" action="{% url 'taletomo:project_character_relationship_add' project.id %}" style="padding-top: 10px;">
+            {% csrf_token %}
+            <div class="form-group">
+              <label for="id_src_char" class="form-label">Source Character</label>
+              <select id="id_src_char" name="source_character_id" class="form-control" required>
+                {% for c in all_characters %}
+                  <option value="{{ c.id }}">{{ c.name }} ({{ c.get_role_display }})</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="id_rel_type" class="form-label">Relationship Connection *</label>
+              <input type="text" id="id_rel_type" name="relationship_type" class="form-control" required placeholder="e.g. Rival, Mentor, Sister, Secret Lover, Liege">
+            </div>
+
+            <div class="form-group">
+              <label for="id_tgt_char" class="form-label">Target Character</label>
+              <select id="id_tgt_char" name="target_character_id" class="form-control" required>
+                {% for c in all_characters %}
+                  <option value="{{ c.id }}" {% if forloop.counter == 2 %}selected{% endif %}>{{ c.name }} ({{ c.get_role_display }})</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="id_dyn_status" class="form-label">Dynamic Status</label>
+              <select id="id_dyn_status" name="dynamic_status" class="form-control">
+                {% for val, label in relationship_statuses %}
+                  <option value="{{ val }}" {% if val == 'neutral' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="id_rel_desc" class="form-label">Context / History</label>
+              <textarea id="id_rel_desc" name="description" class="form-control" rows="2" placeholder="e.g. Former comrades until the Battle of Red Ridge; mutual distrust."></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-cta btn-block" style="margin-top: 16px;">
+              Save Relationship <span class="btn-cta-chip" aria-hidden="true">→</span>
+            </button>
+          </form>
+        {% else %}
+          <p class="text-muted" style="padding: 16px;">You need at least 2 characters registered to define relationships.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 3: SCENE & POV TRACKER -->
+<div id="tab-tracker" class="char-tab-content" style="{% if request.GET.tab != 'tracker' %}display: none;{% endif %}">
+  <div class="card">
+    <div class="card-header">
+      <h2>Cast Appearance &amp; Scene Presence Tracker</h2>
+      <p style="font-size: 0.9rem; color: var(--text-muted, #64748b);">Aggregated presence across chapter contracts, scene breakdowns, and perspective POV assignments.</p>
+    </div>
+    {% if all_characters %}
+      <div style="overflow-x: auto; margin-top: 12px;">
+        <table class="table" style="width: 100%; border-collapse: collapse; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border-color, #e2e8f0); font-size: 0.85rem; color: var(--text-muted, #64748b);">
+              <th style="padding: 10px;">Character</th>
+              <th style="padding: 10px;">Role</th>
+              <th style="padding: 10px;">Vitality</th>
+              <th style="padding: 10px;">POV Chapters</th>
+              <th style="padding: 10px;">Scene Appearances</th>
+              <th style="padding: 10px;">Chapters Present</th>
+              <th style="padding: 10px; text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in all_characters %}
+              <tr style="border-bottom: 1px solid var(--border-color, #e2e8f0); font-size: 0.9rem;">
+                <td style="padding: 12px 10px; font-weight: 600;">{{ c.name }}</td>
+                <td style="padding: 12px 10px;"><span class="badge badge-subtle">{{ c.get_role_display }}</span></td>
+                <td style="padding: 12px 10px;">
+                  {% if c.is_alive %}
+                    <span class="badge badge-success">Alive</span>
+                  {% else %}
+                    <span class="badge badge-danger">Deceased</span>
+                  {% endif %}
+                </td>
+                <td style="padding: 12px 10px;"><strong>{{ c.pov_count }}</strong></td>
+                <td style="padding: 12px 10px;"><strong>{{ c.scene_count }}</strong></td>
+                <td style="padding: 12px 10px;">
+                  {% if c.chapter_appearances %}
+                    {% for num in c.chapter_appearances %}
+                      <span class="badge badge-subtle" style="font-size: 0.75rem; padding: 2px 6px;">Ch. {{ num }}</span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted" style="font-size: 0.8rem;">None recorded yet</span>
+                  {% endif %}
+                </td>
+                <td style="padding: 12px 10px; text-align: right;">
+                  <a href="{% url 'taletomo:project_character_edit' project.id c.id %}" class="btn btn-outline btn-sm">Edit</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted" style="padding: 20px; text-align: center;">No characters registered yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function switchCharTab(tabName) {
+  document.querySelectorAll('.char-tab-content').forEach(el => el.style.display = 'none');
+  const target = document.getElementById('tab-' + tabName);
+  if (target) {
+    target.style.display = 'block';
+  }
+  const url = new URL(window.location);
+  url.searchParams.set('tab', tabName);
+  window.history.replaceState({}, '', url);
+
+  document.querySelectorAll('.tabs-nav button').forEach(btn => {
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-secondary');
+  });
+  if (event && event.currentTarget) {
+    event.currentTarget.classList.remove('btn-secondary');
+    event.currentTarget.classList.add('btn-primary');
+  }
+}
+</script>
 {% endblock %}

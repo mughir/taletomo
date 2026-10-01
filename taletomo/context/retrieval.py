@@ -320,12 +320,27 @@ class ContextAssembler:
 
         characters = rank(
             list(Character.objects.filter(project=project)[: CANDIDATE_CAPS["characters"]]),
-            lambda c: [c.name, *c.aliases, c.role, c.goals, *c.traits, c.wounds_status, c.internal_need],
+            lambda c: [
+                c.name,
+                *c.aliases,
+                c.role,
+                c.goals,
+                *c.traits,
+                c.wounds_status,
+                c.internal_need,
+                c.appearance,
+                c.dialogue_style,
+            ],
             lambda c: c.name,
             get_embedding=lambda c: getattr(c, "embedding", None),
         )
+        included_chars = []
         for char, score in characters:
             char_desc = f"Character: {char.name} ({char.role}). Status: {'Alive' if char.is_alive else 'Dead'}."
+            if char.appearance:
+                char_desc += f" Appearance: {char.appearance}."
+            if char.dialogue_style:
+                char_desc += f" Voice/Speech: {char.dialogue_style}."
             if char.goals:
                 char_desc += f" Goals: {char.goals}."
             if char.wounds_status:
@@ -334,6 +349,25 @@ class ContextAssembler:
                 char_desc += f" Beliefs: {json.dumps(char.beliefs)}."
             if record_entry(str(char.id), "state", char_desc, priority=2, score=score):
                 state_parts.append(char_desc)
+                included_chars.append(char.id)
+
+        if included_chars:
+            from taletomo.canon.models import CharacterRelationship
+
+            relationships = CharacterRelationship.objects.filter(
+                project=project,
+                source_character_id__in=included_chars,
+                target_character_id__in=included_chars,
+            ).select_related("source_character", "target_character")[:10]
+            for rel in relationships:
+                rel_desc = (
+                    f"Relationship: {rel.source_character.name} is {rel.relationship_type} "
+                    f"of {rel.target_character.name} ({rel.get_dynamic_status_display()})"
+                )
+                if rel.description:
+                    rel_desc += f" - {rel.description}"
+                if record_entry(str(rel.id), "state", rel_desc, priority=2, score=1):
+                    state_parts.append(rel_desc)
 
         locations = rank(
             list(Location.objects.filter(project=project)[: CANDIDATE_CAPS["locations"]]),

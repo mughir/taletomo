@@ -7,6 +7,7 @@ from django.utils.text import slugify
 from taletomo.canon.models import (
     CanonFact,
     Character,
+    CharacterRelationship,
     Faction,
     Item,
     Location,
@@ -556,12 +557,26 @@ class ExportService:
                         "traits": c.traits,
                         "goals": c.goals,
                         "internal_need": c.internal_need,
+                        "appearance": c.appearance,
+                        "dialogue_style": c.dialogue_style,
                         "wounds_status": c.wounds_status,
                         "is_alive": c.is_alive,
                         "beliefs": c.beliefs,
                         "metadata": c.metadata,
                     }
                     for c in project.characters.all()
+                ],
+                "relationships": [
+                    {
+                        "source_character_name": r.source_character.name,
+                        "target_character_name": r.target_character.name,
+                        "relationship_type": r.relationship_type,
+                        "description": r.description,
+                        "dynamic_status": r.dynamic_status,
+                    }
+                    for r in project.character_relationships.select_related(
+                        "source_character", "target_character"
+                    ).all()
                 ],
                 "locations": [
                     {
@@ -865,8 +880,9 @@ class ExportService:
 
         # Canon Entities
         canon_data = backup_data.get("canon", {})
+        char_obj_map = {}
         for c in canon_data.get("characters", []):
-            Character.objects.create(
+            char_obj = Character.objects.create(
                 project=project,
                 name=c["name"],
                 aliases=c.get("aliases", []),
@@ -874,11 +890,29 @@ class ExportService:
                 traits=c.get("traits", []),
                 goals=c.get("goals", ""),
                 internal_need=c.get("internal_need", ""),
+                appearance=c.get("appearance", ""),
+                dialogue_style=c.get("dialogue_style", ""),
                 wounds_status=c.get("wounds_status", ""),
                 is_alive=c.get("is_alive", True),
                 beliefs=c.get("beliefs", []),
                 metadata=c.get("metadata", {}),
             )
+            char_obj_map[c["name"].lower()] = char_obj
+
+        for rel in canon_data.get("relationships", []):
+            src_name = rel.get("source_character_name", "").lower()
+            tgt_name = rel.get("target_character_name", "").lower()
+            src_char = char_obj_map.get(src_name)
+            tgt_char = char_obj_map.get(tgt_name)
+            if src_char and tgt_char:
+                CharacterRelationship.objects.create(
+                    project=project,
+                    source_character=src_char,
+                    target_character=tgt_char,
+                    relationship_type=rel.get("relationship_type", "Ally"),
+                    description=rel.get("description", ""),
+                    dynamic_status=rel.get("dynamic_status", "neutral"),
+                )
 
         for loc in canon_data.get("locations", []):
             Location.objects.create(
