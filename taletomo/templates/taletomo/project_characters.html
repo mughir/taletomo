@@ -12,7 +12,7 @@
 {% include "taletomo/_project_subnav.html" with active_tab="characters" %}
 
 <!-- Tab navigation -->
-<div class="tabs-nav" style="display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color, #e2e8f0); padding-bottom: 12px;">
+<div class="tabs-nav" style="display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid var(--hairline); padding-bottom: 12px;">
   <button type="button" class="btn btn-sm {% if not request.GET.tab or request.GET.tab == 'cast' %}btn-primary{% else %}btn-secondary{% endif %}" onclick="switchCharTab('cast')">👥 Cast &amp; Profiles ({{ total_characters_count }})</button>
   <button type="button" class="btn btn-sm {% if request.GET.tab == 'relationships' %}btn-primary{% else %}btn-secondary{% endif %}" onclick="switchCharTab('relationships')">🔗 Relationships ({{ relationships.count }})</button>
   <button type="button" class="btn btn-sm {% if request.GET.tab == 'tracker' %}btn-primary{% else %}btn-secondary{% endif %}" onclick="switchCharTab('tracker')">📊 Scene &amp; POV Tracker</button>
@@ -25,7 +25,7 @@
     <form method="get" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;">
       <input type="hidden" name="tab" value="cast">
       <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted, #64748b);">Role:</span>
+        <span style="font-size: 0.85rem; font-weight: 600; color: var(--ink-soft);">Role:</span>
         <a href="?tab=cast" class="badge {% if not role_filter %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">All ({{ total_characters_count }})</a>
         <a href="?tab=cast&role=protagonist" class="badge {% if role_filter == 'protagonist' %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">Protagonist</a>
         <a href="?tab=cast&role=antagonist" class="badge {% if role_filter == 'antagonist' %}badge-primary{% else %}badge-subtle{% endif %}" style="text-decoration: none;">Antagonist</a>
@@ -54,7 +54,7 @@
         {% if characters %}
           <div class="stack" style="gap: 16px;">
             {% for char in characters %}
-              <div class="item-card" style="border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 16px;">
+              <div class="item-card" style="border: 1px solid var(--hairline); border-radius: 8px; padding: 16px;">
                 <div class="item-card-head" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                   <div>
                     <span class="item-title" style="font-size: 1.15rem; font-weight: 700;">{{ char.name }}</span>
@@ -75,7 +75,7 @@
                 </div>
 
                 <!-- Appearance & Scene Presence metrics -->
-                <div style="font-size: 0.85rem; color: var(--text-muted, #64748b); margin-bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap;">
+                <div style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 10px; display: flex; gap: 12px; flex-wrap: wrap;">
                   <span>🎬 <strong>{{ char.scene_count }}</strong> scenes</span>
                   <span>🎯 <strong>{{ char.pov_count }}</strong> POV chapters</span>
                   {% if char.chapter_appearances %}
@@ -97,11 +97,11 @@
                 {% endif %}
 
                 {% if char.dialogue_style %}
-                  <p style="font-size: 0.9rem; margin-bottom: 6px; color: var(--primary-color, #4338ca);"><strong>Voice &amp; Speech:</strong> <em>{{ char.dialogue_style }}</em></p>
+                  <p style="font-size: 0.9rem; margin-bottom: 6px; color: var(--primary);"><strong>Voice &amp; Speech:</strong> <em>{{ char.dialogue_style }}</em></p>
                 {% endif %}
 
                 {% if char.wounds_status %}
-                  <p class="item-danger-text" style="color: #dc2626; font-size: 0.9rem; margin-bottom: 6px;">
+                  <p class="item-danger-text" style="color: var(--danger); font-size: 0.9rem; margin-bottom: 6px;">
                     <strong>Physical Wounds:</strong> {{ char.wounds_status }}
                   </p>
                 {% endif %}
@@ -218,11 +218,11 @@
         {% if relationships %}
           <div class="stack" style="gap: 12px;">
             {% for rel in relationships %}
-              <div class="item-card" style="display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px;">
+              <div class="item-card" style="display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--hairline); border-radius: 8px;">
                 <div>
                   <div style="font-size: 1rem; font-weight: 600;">
                     <span>{{ rel.source_character.name }}</span>
-                    <span style="color: var(--primary-color, #4338ca); margin: 0 6px;">➔ {{ rel.relationship_type }} ➔</span>
+                    <span style="color: var(--primary); margin: 0 6px;">➔ {{ rel.relationship_type }} ➔</span>
                     <span>{{ rel.target_character.name }}</span>
                   </div>
                   <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
@@ -230,13 +230,13 @@
                       {{ rel.get_dynamic_status_display }}
                     </span>
                     {% if rel.description %}
-                      <span style="font-size: 0.85rem; color: var(--text-muted, #64748b);">{{ rel.description }}</span>
+                      <span style="font-size: 0.85rem; color: var(--ink-soft);">{{ rel.description }}</span>
                     {% endif %}
                   </div>
                 </div>
                 <form method="post" action="{% url 'taletomo:project_character_relationship_delete' project.id rel.id %}" onsubmit="return confirm('Remove relationship?');">
                   {% csrf_token %}
-                  <button type="submit" class="btn btn-outline btn-sm" style="color: #dc2626;">Remove</button>
+                  <button type="submit" class="btn btn-outline btn-sm" style="color: var(--danger);">Remove</button>
                 </form>
               </div>
             {% endfor %}
@@ -309,13 +309,13 @@
   <div class="card">
     <div class="card-header">
       <h2>Cast Appearance &amp; Scene Presence Tracker</h2>
-      <p style="font-size: 0.9rem; color: var(--text-muted, #64748b);">Aggregated presence across chapter contracts, scene breakdowns, and perspective POV assignments.</p>
+      <p style="font-size: 0.9rem; color: var(--ink-soft);">Aggregated presence across chapter contracts, scene breakdowns, and perspective POV assignments.</p>
     </div>
     {% if all_characters %}
       <div style="overflow-x: auto; margin-top: 12px;">
         <table class="table" style="width: 100%; border-collapse: collapse; text-align: left;">
           <thead>
-            <tr style="border-bottom: 2px solid var(--border-color, #e2e8f0); font-size: 0.85rem; color: var(--text-muted, #64748b);">
+            <tr style="border-bottom: 2px solid var(--hairline); font-size: 0.85rem; color: var(--ink-soft);">
               <th style="padding: 10px;">Character</th>
               <th style="padding: 10px;">Role</th>
               <th style="padding: 10px;">Vitality</th>
@@ -327,7 +327,7 @@
           </thead>
           <tbody>
             {% for c in all_characters %}
-              <tr style="border-bottom: 1px solid var(--border-color, #e2e8f0); font-size: 0.9rem;">
+              <tr style="border-bottom: 1px solid var(--hairline); font-size: 0.9rem;">
                 <td style="padding: 12px 10px; font-weight: 600;">{{ c.name }}</td>
                 <td style="padding: 12px 10px;"><span class="badge badge-subtle">{{ c.get_role_display }}</span></td>
                 <td style="padding: 12px 10px;">

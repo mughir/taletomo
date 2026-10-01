@@ -4,7 +4,31 @@
 
 {% block extra_head %}
 <style>
-  /* --- Reader Mode Theme & Typography --- */
+  /* --- Full-bleed Reader Mode Immersion & Themes --- */
+  body.reader-active {
+    background-color: var(--reader-bg, #f4ecd8) !important;
+    color: var(--reader-text, #3c3226) !important;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  body.reader-active .site-header {
+    display: none;
+  }
+  body.reader-active .main-container {
+    padding: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+  body.reader-active .messages-container {
+    padding: 12px 16px 0;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  body.reader-active.reader-theme-dark::after,
+  body.reader-active.reader-theme-midnight::after {
+    opacity: 0.02;
+    mix-blend-mode: overlay;
+  }
+
   .reader-viewport {
     min-height: 100vh;
     padding-bottom: 80px;
@@ -12,6 +36,7 @@
   }
 
   /* Themes */
+  body.reader-active.reader-theme-light,
   .reader-theme-light {
     --reader-bg: #fbf9f4;
     --reader-text: #24211d;
@@ -20,6 +45,7 @@
     --reader-card: #f4efe4;
     --reader-accent: #8b3a16;
   }
+  body.reader-active.reader-theme-sepia,
   .reader-theme-sepia {
     --reader-bg: #f4ecd8;
     --reader-text: #3c3226;
@@ -28,6 +54,7 @@
     --reader-card: #ece1c8;
     --reader-accent: #9e4719;
   }
+  body.reader-active.reader-theme-dark,
   .reader-theme-dark {
     --reader-bg: #1c1f24;
     --reader-text: #e1e4e8;
@@ -36,6 +63,7 @@
     --reader-card: #24292e;
     --reader-accent: #f0883e;
   }
+  body.reader-active.reader-theme-midnight,
   .reader-theme-midnight {
     --reader-bg: #090a0c;
     --reader-text: #dcdcdc;
@@ -346,12 +374,31 @@
       </div>
 
       <div class="reader-controls">
+        {% if prev_chapter %}
+          <a href="{% url 'taletomo:chapter_read' project.id prev_chapter.id %}" class="reader-btn" title="Previous chapter (← Left Arrow)">
+            ←
+          </a>
+        {% endif %}
+        {% if next_chapter %}
+          <form method="post" action="{% url 'taletomo:chapter_read_next' project.id chapter.id %}" style="display: inline; margin: 0;">
+            {% csrf_token %}
+            <button type="submit" class="reader-btn" title="Next chapter (→ Right Arrow)">
+              →
+            </button>
+          </form>
+        {% endif %}
+
         <button type="button" class="reader-btn" @click="showToc = true" title="Table of Contents">
           📖 Contents
         </button>
 
         <button type="button" class="reader-btn" @click="showSettings = !showSettings" title="Typography & Theme">
           ⚙️ Aa
+        </button>
+
+        <button type="button" class="reader-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'">
+          <span v-if="!isFullscreen">⛶ Fullscreen</span>
+          <span v-else>⛶ Exit</span>
         </button>
 
         <a href="{% url 'taletomo:chapter_edit' project.id chapter.id %}" class="reader-btn" title="Switch to Author Workbench">
@@ -489,26 +536,27 @@
     <nav class="reader-footer-nav" aria-label="Chapter navigation">
       <div>
         {% if prev_chapter %}
-          <a href="{% url 'taletomo:chapter_read' project.id prev_chapter.id %}" class="reader-btn">
+          <a id="reader-prev-link" href="{% url 'taletomo:chapter_read' project.id prev_chapter.id %}" class="reader-btn" title="Previous chapter (← Left Arrow)">
             ← Chapter {{ prev_chapter.chapter_number }}
           </a>
         {% endif %}
       </div>
 
       <div style="text-align: center; color: var(--reader-muted); font-size: 0.85rem;">
-        Chapter {{ chapter.chapter_number }} of {{ total_chapters }}
+        <div>Chapter {{ chapter.chapter_number }} of {{ total_chapters }}</div>
+        <div style="font-size: 0.75rem; opacity: 0.8; margin-top: 4px;">Tip: Use ← / → keys to navigate chapters · F for fullscreen</div>
       </div>
 
       <div>
         {% if next_chapter %}
-          <form method="post" action="{% url 'taletomo:chapter_read_next' project.id chapter.id %}">
+          <form id="reader-next-form" method="post" action="{% url 'taletomo:chapter_read_next' project.id chapter.id %}">
             {% csrf_token %}
             {% if next_has_draft %}
-              <button type="submit" class="reader-btn reader-next-btn">
+              <button id="reader-next-btn" type="submit" class="reader-btn reader-next-btn" title="Next chapter (→ Right Arrow)">
                 Read Chapter {{ next_chapter.chapter_number }} →
               </button>
             {% else %}
-              <button type="submit" class="reader-btn reader-next-btn">
+              <button id="reader-next-btn" type="submit" class="reader-btn reader-next-btn" title="Next chapter (→ Right Arrow)">
                 ⚡ Generate &amp; Read Chapter {{ next_chapter.chapter_number }} →
               </button>
             {% endif %}
@@ -533,6 +581,7 @@
         return {
           showSettings: false,
           showToc: false,
+          isFullscreen: false,
           theme: localStorage.getItem('taletomo_reader_theme') || 'sepia',
           font: localStorage.getItem('taletomo_reader_font') || 'serif',
           size: localStorage.getItem('taletomo_reader_size') || 'md',
@@ -541,8 +590,11 @@
         };
       },
       mounted() {
+        document.body.classList.add('reader-active');
         this.applyPreferences();
         window.addEventListener('scroll', this.updateProgress);
+        window.addEventListener('keydown', this.handleKeydown);
+        document.addEventListener('fullscreenchange', this.updateFullscreenState);
 
         // If an active job is running, poll for completion
         if (this.activeJobId) {
@@ -551,6 +603,9 @@
       },
       beforeUnmount() {
         window.removeEventListener('scroll', this.updateProgress);
+        window.removeEventListener('keydown', this.handleKeydown);
+        document.removeEventListener('fullscreenchange', this.updateFullscreenState);
+        document.body.classList.remove('reader-active', 'reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark', 'reader-theme-midnight');
       },
       methods: {
         setTheme(t) {
@@ -574,11 +629,16 @@
           this.applyPreferences();
         },
         applyPreferences() {
+          const themeClasses = ['reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark', 'reader-theme-midnight'];
           const app = document.getElementById('reader-app');
-          if (!app) return;
-          // Clear theme classes
-          app.classList.remove('reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark', 'reader-theme-midnight');
-          app.classList.add('reader-theme-' + this.theme);
+          if (app) {
+            app.classList.remove(...themeClasses);
+            app.classList.add('reader-theme-' + this.theme);
+          }
+          if (document.body) {
+            document.body.classList.remove(...themeClasses);
+            document.body.classList.add('reader-theme-' + this.theme);
+          }
         },
         updateProgress() {
           const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
@@ -587,6 +647,39 @@
           if (progressEl && docHeight > 0) {
             const pct = Math.min(100, Math.max(0, (scrollPos / docHeight) * 100));
             progressEl.style.width = pct + '%';
+          }
+        },
+        toggleFullscreen() {
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          } else {
+            if (document.exitFullscreen) {
+              document.exitFullscreen().catch(() => {});
+            }
+          }
+        },
+        updateFullscreenState() {
+          this.isFullscreen = !!document.fullscreenElement;
+        },
+        handleKeydown(e) {
+          const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+          if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select' || (document.activeElement && document.activeElement.isContentEditable)) {
+            return;
+          }
+          if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+          if (e.key === 'ArrowLeft') {
+            const prevLink = document.getElementById('reader-prev-link');
+            if (prevLink) {
+              window.location.href = prevLink.getAttribute('href');
+            }
+          } else if (e.key === 'ArrowRight') {
+            const nextBtn = document.getElementById('reader-next-btn');
+            if (nextBtn) {
+              nextBtn.click();
+            }
+          } else if (e.key === 'f' || e.key === 'F') {
+            this.toggleFullscreen();
           }
         },
         pollJob() {

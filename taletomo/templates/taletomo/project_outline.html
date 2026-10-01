@@ -77,6 +77,9 @@
             {% endif %}
           </td>
           <td class="cell-actions">
+            {% if ch.active_draft_id or ch.drafts.exists %}
+              <a href="{% url 'taletomo:chapter_read' project.id ch.id %}" class="btn btn-secondary btn-sm" title="Read in distraction-free Reader Mode">📖 Read</a>
+            {% endif %}
             <a href="{% url 'taletomo:chapter_plan' project.id ch.id %}" class="btn btn-secondary btn-sm">Contract</a>
             <a href="{% url 'taletomo:chapter_edit' project.id ch.id %}" class="btn btn-primary btn-sm">Write / review</a>
           </td>
