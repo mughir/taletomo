@@ -795,7 +795,9 @@ def chapter_edit(request, project_id, chapter_id):
 @login_required
 @require_POST
 def chapter_copilot_api(request, project_id, chapter_id):
-    """Provides inline contextual prose assistance: expand scene, show don't tell, punch up dialogue, or fix continuity."""
+    """Provides inline contextual prose assistance with instant diffs and surrounding context."""
+    from taletomo.generation.copilot import ProseCoPilotService
+
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
 
@@ -804,65 +806,29 @@ def chapter_copilot_api(request, project_id, chapter_id):
     except Exception:
         body = request.POST
 
-    action = str(body.get("action", "expand")).strip().lower()
-    selected_text = str(body.get("selected_text", "")).strip()
-    custom_instruction = str(body.get("custom_instruction", "")).strip()
+    action = str(body.get("action", "show_not_tell")).strip().lower()
+    selected_text = str(body.get("selected_text") or body.get("selection") or "").strip()
+    context_before = str(body.get("context_before", ""))
+    context_after = str(body.get("context_after", ""))
+    custom_instruction = str(body.get("custom_instruction") or body.get("instruction") or "").strip()
 
     if not selected_text:
         return JsonResponse({"success": False, "error": "No prose text selected."}, status=400)
 
-    action_instructions = {
-        "expand": "Expand the scene by adding sensory textures (sounds, smells, light), atmosphere, and inner character reflections.",
-        "show_not_tell": "Rewrite the passage using 'show, don't tell': transform static exposition into physical actions, gestures, and subtext.",
-        "punch_up_dialogue": "Sharpen the dialogue: give each line distinct character voice, increase verbal tension, and trim filler.",
-        "fix_continuity": "Revise the prose to resolve physical limitations or continuity issues (such as character injuries or world constraints).",
-    }
-    if action not in action_instructions:
-        action = "expand"
-
-    adapter = ProviderGateway.get_adapter(user=request.user, project=project)
-    model_name = adapter.config.get_model_for_task("copilot") if hasattr(adapter, "config") and adapter.config else None
-
-    system_prompt = (
-        "You are Tomo, an expert fiction editor and writing partner. "
-        "Your role is to polish, expand, or rewrite the author's selected prose according to the editorial action requested. "
-        "Maintain the story's POV, tense, tone, and character voice seamlessly. "
-        "Output ONLY the final replacement prose text. Do NOT include markdown commentary, greeting, or explanations."
-    )
-
-    prompt_parts = [
-        "TASK: COPILOT",
-        f"Editorial Action: {action.upper()} — {action_instructions[action]}",
-    ]
-    if custom_instruction:
-        prompt_parts.append(f"Author Custom Direction: {custom_instruction}")
-    prompt_parts.extend([
-        f"Story Tone: {project.tone} | POV: {project.pov} | Tense: {project.tense}",
-        "Selected Manuscript Passage:",
-        selected_text,
-        "Rewrite:",
-    ])
-    prompt = "\n\n".join(prompt_parts)
-
     try:
-        resp = adapter.generate_text(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            model=model_name,
-            max_tokens=1500,
-            temperature=0.7,
+        result = ProseCoPilotService.polish_selection(
+            user=request.user,
+            project=project,
+            chapter=chapter,
+            selected_text=selected_text,
+            action=action,
+            context_before=context_before,
+            context_after=context_after,
+            custom_instruction=custom_instruction,
         )
-        suggested = resp.content.strip()
-        if suggested.startswith('"""') and suggested.endswith('"""'):
-            suggested = suggested[3:-3].strip()
-        return JsonResponse({
-            "success": True,
-            "action": action,
-            "original_text": selected_text,
-            "suggested_text": suggested,
-        })
+        return JsonResponse(result)
     except Exception as e:
-        logger.error(f"Co-pilot generation failed: {e}")
+        logger.error(f"Co-pilot generation failed: {e}", exc_info=True)
         return JsonResponse({"success": False, "error": f"Co-pilot request failed: {str(e)}"}, status=500)
 
 
