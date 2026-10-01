@@ -593,11 +593,8 @@ def chapter_edit(request, project_id, chapter_id):
         )
         chapter.active_draft_id = new_v.id
         chapter.current_word_count = new_v.word_count
-        if chapter.status in (Chapter.Status.UNPLANNED, Chapter.Status.PLANNED, Chapter.Status.DRAFTING):
-            chapter.status = Chapter.Status.REVIEW
-            chapter.save(update_fields=["active_draft_id", "current_word_count", "status"])
-        else:
-            chapter.save(update_fields=["active_draft_id", "current_word_count"])
+        chapter.status = Chapter.Status.REVIEW
+        chapter.save(update_fields=["active_draft_id", "current_word_count", "status"])
 
         # Manual edits bypass the generation pipeline, so run the free
         # deterministic checks on every saved version.
@@ -624,6 +621,80 @@ def chapter_edit(request, project_id, chapter_id):
         "rules": project.rules.all()[:6],
     }
     return render(request, "taletomo/chapter_edit.html", context)
+
+
+@login_required
+@require_POST
+def chapter_copilot_api(request, project_id, chapter_id):
+    """Provides inline contextual prose assistance: expand scene, show don't tell, punch up dialogue, or fix continuity."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    try:
+        body = json.loads(request.body.decode("utf-8")) if request.body else {}
+    except Exception:
+        body = request.POST
+
+    action = str(body.get("action", "expand")).strip().lower()
+    selected_text = str(body.get("selected_text", "")).strip()
+    custom_instruction = str(body.get("custom_instruction", "")).strip()
+
+    if not selected_text:
+        return JsonResponse({"success": False, "error": "No prose text selected."}, status=400)
+
+    action_instructions = {
+        "expand": "Expand the scene by adding sensory textures (sounds, smells, light), atmosphere, and inner character reflections.",
+        "show_not_tell": "Rewrite the passage using 'show, don't tell': transform static exposition into physical actions, gestures, and subtext.",
+        "punch_up_dialogue": "Sharpen the dialogue: give each line distinct character voice, increase verbal tension, and trim filler.",
+        "fix_continuity": "Revise the prose to resolve physical limitations or continuity issues (such as character injuries or world constraints).",
+    }
+    if action not in action_instructions:
+        action = "expand"
+
+    adapter = ProviderGateway.get_adapter(user=request.user, project=project)
+    model_name = adapter.config.get_model_for_task("copilot") if hasattr(adapter, "config") and adapter.config else None
+
+    system_prompt = (
+        "You are Tomo, an expert fiction editor and writing partner. "
+        "Your role is to polish, expand, or rewrite the author's selected prose according to the editorial action requested. "
+        "Maintain the story's POV, tense, tone, and character voice seamlessly. "
+        "Output ONLY the final replacement prose text. Do NOT include markdown commentary, greeting, or explanations."
+    )
+
+    prompt_parts = [
+        "TASK: COPILOT",
+        f"Editorial Action: {action.upper()} — {action_instructions[action]}",
+    ]
+    if custom_instruction:
+        prompt_parts.append(f"Author Custom Direction: {custom_instruction}")
+    prompt_parts.extend([
+        f"Story Tone: {project.tone} | POV: {project.pov} | Tense: {project.tense}",
+        "Selected Manuscript Passage:",
+        selected_text,
+        "Rewrite:",
+    ])
+    prompt = "\n\n".join(prompt_parts)
+
+    try:
+        resp = adapter.generate_text(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            model=model_name,
+            max_tokens=1500,
+            temperature=0.7,
+        )
+        suggested = resp.content.strip()
+        if suggested.startswith('"""') and suggested.endswith('"""'):
+            suggested = suggested[3:-3].strip()
+        return JsonResponse({
+            "success": True,
+            "action": action,
+            "original_text": selected_text,
+            "suggested_text": suggested,
+        })
+    except Exception as e:
+        logger.error(f"Co-pilot generation failed: {e}")
+        return JsonResponse({"success": False, "error": f"Co-pilot request failed: {str(e)}"}, status=500)
 
 
 @login_required
@@ -772,24 +843,25 @@ def chapter_commit_canon(request, project_id, chapter_id):
             character_updates.append(payload)
 
     try:
-        snapshot = CanonService.commit_chapter_canon(
-            project=project,
-            chapter=chapter,
-            expected_head=expected_head,
-            events=events,
-            facts=facts,
-            actor=request.user,
-            override_blockers=override_blockers,
-            override_rationale=override_rationale,
-            thread_updates=thread_updates,
-            character_updates=character_updates,
-        )
-        chapter.current_summary = summary_text
-        chapter.save(update_fields=["current_summary"])
-        if approved_items:
-            ProposedCanonItem.objects.filter(id__in=[item.id for item in approved_items]).update(
-                status=ProposedCanonItem.Status.CONSUMED
+        with transaction.atomic():
+            snapshot = CanonService.commit_chapter_canon(
+                project=project,
+                chapter=chapter,
+                expected_head=expected_head,
+                events=events,
+                facts=facts,
+                actor=request.user,
+                override_blockers=override_blockers,
+                override_rationale=override_rationale,
+                thread_updates=thread_updates,
+                character_updates=character_updates,
             )
+            chapter.current_summary = summary_text
+            chapter.save(update_fields=["current_summary"])
+            if approved_items:
+                ProposedCanonItem.objects.filter(id__in=[item.id for item in approved_items]).update(
+                    status=ProposedCanonItem.Status.CONSUMED
+                )
 
         messages.success(
             request,
@@ -982,6 +1054,36 @@ def project_export_markdown(request, project_id):
 
 
 @login_required
+def project_export_epub(request, project_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    epub_bytes = ExportService.export_epub(project)
+    response = HttpResponse(epub_bytes, content_type="application/epub+zip")
+    response["Content-Disposition"] = f'attachment; filename="{project.slug or "novel"}.epub"'
+    return response
+
+
+@login_required
+def project_export_docx(request, project_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    docx_bytes = ExportService.export_docx(project)
+    response = HttpResponse(
+        docx_bytes,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{project.slug or "novel"}.docx"'
+    return response
+
+
+@login_required
+def project_export_webnovel(request, project_id):
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    html_content = ExportService.export_webnovel_html(project)
+    response = HttpResponse(html_content, content_type="text/html; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{project.slug or "novel"}_webnovel.html"'
+    return response
+
+
+@login_required
 def project_export_json(request, project_id):
     project = get_object_or_404(Project, id=project_id, owner=request.user)
     json_data = ExportService.export_json_backup(project)
@@ -1051,7 +1153,9 @@ def job_cancel(request, job_id):
     if job.status not in (JobStatus.READY, JobStatus.FAILED, JobStatus.CANCELLED):
         job.status = JobStatus.CANCELLED
         job.stage = "Cancelled by user"
-        job.save(update_fields=["status", "stage", "updated_at"])
+        job.lease_worker_id = None
+        job.lease_expires_at = None
+        job.save(update_fields=["status", "stage", "lease_worker_id", "lease_expires_at", "updated_at"])
         for res in BudgetReservation.objects.filter(job_id=job.id, status=BudgetReservation.Status.RESERVED):
             res.release()
         messages.info(request, f"Job {job.id} has been cancelled.")
@@ -1073,7 +1177,19 @@ def job_retry(request, job_id):
         job.stage = "Queued for retry"
         job.progress_pct = 0
         job.error_message = ""
-        job.save(update_fields=["status", "stage", "progress_pct", "error_message", "updated_at"])
+        job.lease_worker_id = None
+        job.lease_expires_at = None
+        job.save(
+            update_fields=[
+                "status",
+                "stage",
+                "progress_pct",
+                "error_message",
+                "lease_worker_id",
+                "lease_expires_at",
+                "updated_at",
+            ]
+        )
         transaction.on_commit(lambda: generate_chapter_task.delay(str(job.id)))
         messages.info(request, f"Job {job.id} has been restarted.")
     return redirect("taletomo:job_detail", job_id=job.id)
@@ -1090,6 +1206,23 @@ def settings_providers(request):
         api_key = request.POST.get("api_key", "").strip()
         model_name = request.POST.get("model_name", "gpt-4o").strip()
 
+        drafting_model = request.POST.get("drafting_model", "").strip() or model_name
+        planning_model = request.POST.get("planning_model", "").strip() or model_name
+        extraction_model = request.POST.get("extraction_model", "").strip() or "gpt-4o-mini"
+        critique_model = request.POST.get("critique_model", "").strip() or "gpt-4o-mini"
+        copilot_model = request.POST.get("copilot_model", "").strip() or model_name
+
+        daily_limit_str = request.POST.get("daily_cost_limit_usd", "20.00").strip()
+        monthly_limit_str = request.POST.get("monthly_cost_limit_usd", "50.00").strip()
+        try:
+            daily_limit = Decimal(daily_limit_str)
+        except Exception:
+            daily_limit = Decimal("20.00")
+        try:
+            monthly_limit = Decimal(monthly_limit_str)
+        except Exception:
+            monthly_limit = Decimal("50.00")
+
         endpoint_val = endpoint or "https://api.openai.com/v1"
         try:
             validate_endpoint_url(endpoint_val)
@@ -1098,20 +1231,33 @@ def settings_providers(request):
             return redirect("taletomo:settings_providers")
 
         is_first = not ProviderConfig.objects.filter(user=request.user).exists()
+        task_routing = {
+            "drafting": drafting_model,
+            "planning": planning_model,
+            "extraction": extraction_model,
+            "critique": critique_model,
+            "copilot": copilot_model,
+        }
         cfg = ProviderConfig.objects.create(
             user=request.user,
             name=name,
             provider_type=p_type,
             endpoint_url=endpoint_val,
-            default_drafting_model=model_name,
-            default_planning_model=model_name,
+            default_drafting_model=drafting_model,
+            default_planning_model=planning_model,
+            default_critique_model=critique_model,
+            default_extraction_model=extraction_model,
+            default_copilot_model=copilot_model,
+            task_routing=task_routing,
+            daily_cost_limit_usd=daily_limit,
+            monthly_cost_limit_usd=monthly_limit,
             is_default=is_first,
             is_active=True,
         )
         if api_key:
             cfg.set_api_key(api_key)
             cfg.save()
-        messages.success(request, f"Provider '{name}' saved and encrypted.")
+        messages.success(request, f"Provider '{name}' saved and encrypted with task routing configured.")
         return redirect("taletomo:settings_providers")
 
     return render(request, "taletomo/settings_providers.html", {"configs": configs, "types": ProviderType.choices})

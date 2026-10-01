@@ -32,8 +32,20 @@
 
               <div class="provider-detail">
                 <div><strong>Endpoint:</strong> <code>{{ c.endpoint_url }}</code></div>
-                <div><strong>Drafting model:</strong> {{ c.default_drafting_model }}</div>
                 <div><strong>Masked key:</strong> <code>{{ c.get_masked_key }}</code></div>
+                <div style="margin-top: 0.5rem;">
+                  <strong>Task Model Routing:</strong>
+                  <ul style="list-style: none; padding-left: 0; margin-top: 0.25rem; font-size: 0.85rem;">
+                    <li>✍️ <strong>Drafting:</strong> <code>{{ c.default_drafting_model }}</code></li>
+                    <li>🗺️ <strong>Planning:</strong> <code>{{ c.default_planning_model }}</code></li>
+                    <li>🔍 <strong>Extraction:</strong> <code>{{ c.default_extraction_model }}</code></li>
+                    <li>🛡️ <strong>Critique:</strong> <code>{{ c.default_critique_model }}</code></li>
+                    <li>💡 <strong>Co-Pilot:</strong> <code>{{ c.default_copilot_model }}</code></li>
+                  </ul>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--color-text-muted, #666);">
+                  <strong>Spending Caps:</strong> Daily: ${{ c.daily_cost_limit_usd }} | Monthly: ${{ c.monthly_cost_limit_usd }}
+                </div>
               </div>
             </div>
           {% endfor %}
@@ -56,7 +68,7 @@
         {% csrf_token %}
         <div class="form-group">
           <label for="id_p_name" class="form-label">Provider name</label>
-          <input type="text" id="id_p_name" name="name" class="form-control" required placeholder="e.g. OpenAI Production / Ollama Local">
+          <input type="text" id="id_p_name" name="name" class="form-control" required placeholder="e.g. OpenAI Production / OpenRouter / Ollama">
         </div>
 
         <div class="form-group">
@@ -80,9 +92,44 @@
           <small class="field-note">Encrypted at rest with AES-GCM. Never shown after save.</small>
         </div>
 
-        <div class="form-group">
-          <label for="id_model_name" class="form-label">Default model</label>
-          <input type="text" id="id_model_name" name="model_name" class="form-control" value="gpt-4o" placeholder="e.g. gpt-4o, claude-3-5-sonnet">
+        <fieldset style="border: 1px solid var(--color-border, #ddd); border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem;">
+          <legend style="font-size: 0.9rem; font-weight: 600; padding: 0 0.5rem;">Task-Specific Model Routing</legend>
+          
+          <div class="form-group" style="margin-bottom: 0.5rem;">
+            <label for="id_drafting_model" class="form-label">Drafting model (creative long-context)</label>
+            <input type="text" id="id_drafting_model" name="drafting_model" class="form-control" value="gpt-4o" placeholder="e.g. gpt-4o, claude-3-5-sonnet">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0.5rem;">
+            <label for="id_planning_model" class="form-label">Planning model (deep reasoning)</label>
+            <input type="text" id="id_planning_model" name="planning_model" class="form-control" value="gpt-4o" placeholder="e.g. gpt-4o, o1-preview">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0.5rem;">
+            <label for="id_extraction_model" class="form-label">Canon extraction model (fast &amp; economical)</label>
+            <input type="text" id="id_extraction_model" name="extraction_model" class="form-control" value="gpt-4o-mini" placeholder="e.g. gpt-4o-mini, claude-3-5-haiku">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0.5rem;">
+            <label for="id_critique_model" class="form-label">Continuity critique model</label>
+            <input type="text" id="id_critique_model" name="critique_model" class="form-control" value="gpt-4o-mini" placeholder="e.g. gpt-4o-mini, gemini-1.5-flash">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="id_copilot_model" class="form-label">Writing studio co-pilot model</label>
+            <input type="text" id="id_copilot_model" name="copilot_model" class="form-control" value="gpt-4o" placeholder="e.g. gpt-4o, claude-3-5-sonnet">
+          </div>
+        </fieldset>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="id_daily_limit" class="form-label">Daily budget cap ($)</label>
+            <input type="number" step="0.50" id="id_daily_limit" name="daily_cost_limit_usd" class="form-control" value="20.00">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="id_monthly_limit" class="form-label">Monthly budget cap ($)</label>
+            <input type="number" step="1.00" id="id_monthly_limit" name="monthly_cost_limit_usd" class="form-control" value="50.00">
+          </div>
         </div>
 
         <button type="submit" class="btn btn-primary btn-cta btn-block">Save &amp; encrypt provider <span class="btn-cta-chip" aria-hidden="true">→</span></button>

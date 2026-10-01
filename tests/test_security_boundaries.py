@@ -188,7 +188,7 @@ def test_compare_drafts_rejects_cross_chapter_diffing(client):
     d1 = DraftArtifact.objects.create(chapter=ch1, version_number=1, prose_content="Chapter 1 content")
     d2 = DraftArtifact.objects.create(chapter=ch2, version_number=1, prose_content="Chapter 2 content")
 
-    res = client.get(f"/projects/{project.id}/drafts/{d1.id}/compare/{d2.id}/")
+    res = client.get(f"/projects/{project.id}/compare/{d1.id}/{d2.id}/")
     assert res.status_code == 404
 
 

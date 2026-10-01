@@ -94,6 +94,42 @@
             <button type="submit" class="btn btn-secondary btn-sm" {% if chapter.status == 'locked' %}disabled{% endif %}>Save a new version</button>
           </form>
         </div>
+
+        <!-- Tomo Co-Pilot Writing Bar -->
+        <div class="copilot-bar" id="copilot-container" style="background: var(--color-surface-subtle, #f8f9fa); border: 1px solid var(--color-border, #e2e8f0); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 1.1rem;">✨</span>
+              <strong>Ask Tomo (In-Editor Co-Pilot)</strong>
+              <small style="color: var(--color-text-muted, #64748b);">Highlight text in the manuscript, then choose an action:</small>
+            </div>
+            <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="triggerCopilot('expand')">🔍 Expand scene</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="triggerCopilot('show_not_tell')">🎭 Show, don't tell</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="triggerCopilot('punch_up_dialogue')">💬 Punch up dialogue</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="triggerCopilot('fix_continuity')">🩹 Fix continuity</button>
+            </div>
+          </div>
+          
+          <div id="copilot-custom-row" style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+            <input type="text" id="copilot-instruction" class="form-control" style="font-size: 0.85rem; padding: 0.35rem 0.6rem;" placeholder="Optional custom direction for Tomo (e.g. 'increase tension', 'add sensory smell of sulfur')...">
+          </div>
+
+          <!-- Co-Pilot Status / Preview Drawer -->
+          <div id="copilot-preview" style="display: none; margin-top: 0.75rem; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span id="copilot-status-badge" class="badge badge-warning">Tomo is thinking…</span>
+              <button type="button" class="btn btn-quiet btn-sm" onclick="closeCopilotPreview()">✕</button>
+            </div>
+            <div id="copilot-suggestion-content" style="font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; max-height: 250px; overflow-y: auto; background: #fdfdfd; padding: 0.5rem; border-radius: 4px; border: 1px solid #f1f5f9;"></div>
+            <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+              <button type="button" class="btn btn-quiet btn-sm" onclick="closeCopilotPreview()">Discard</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-insert-below" onclick="insertCopilotBelow()">Insert below selection</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-replace-selection" onclick="applyCopilotReplacement()">Replace selection</button>
+            </div>
+          </div>
+        </div>
+
         <label for="prose-textarea" class="sr-only">Chapter prose</label>
         <textarea id="prose-textarea" name="prose_content" form="manuscript-editor" class="manuscript-textarea" {% if chapter.status == 'locked' %}readonly{% endif %} placeholder="Begin with the moment everything changes…">{{ active_draft.prose_content|default:"" }}</textarea>
         <div class="writing-footer">
@@ -241,4 +277,91 @@
     </aside>
   </div>
 </section>
+
+<script>
+let copilotSelectionStart = 0;
+let copilotSelectionEnd = 0;
+let copilotOriginalText = "";
+let copilotSuggestedText = "";
+
+function triggerCopilot(action) {
+  const textarea = document.getElementById("prose-textarea");
+  if (!textarea) return;
+
+  copilotSelectionStart = textarea.selectionStart;
+  copilotSelectionEnd = textarea.selectionEnd;
+  copilotOriginalText = textarea.value.substring(copilotSelectionStart, copilotSelectionEnd).trim();
+
+  if (!copilotOriginalText) {
+    alert("Please highlight/select a passage in the manuscript first to use Tomo Co-Pilot.");
+    return;
+  }
+
+  const instruction = document.getElementById("copilot-instruction").value;
+  const preview = document.getElementById("copilot-preview");
+  const badge = document.getElementById("copilot-status-badge");
+  const content = document.getElementById("copilot-suggestion-content");
+
+  preview.style.display = "block";
+  badge.className = "badge badge-warning";
+  badge.textContent = "Tomo is writing revision…";
+  content.textContent = "Analyzing context and generating revision…";
+
+  const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]") ? document.querySelector("[name=csrfmiddlewaretoken]").value : "";
+
+  fetch("{% url 'taletomo:chapter_copilot_api' project.id chapter.id %}", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
+    body: JSON.stringify({
+      action: action,
+      selected_text: copilotOriginalText,
+      custom_instruction: instruction,
+    }),
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      copilotSuggestedText = data.suggested_text;
+      badge.className = "badge badge-success";
+      badge.textContent = "Tomo suggestion ready (" + data.action + ")";
+      content.textContent = copilotSuggestedText;
+    } else {
+      badge.className = "badge badge-danger";
+      badge.textContent = "Failed";
+      content.textContent = data.error || "An error occurred.";
+    }
+  })
+  .catch(err => {
+    badge.className = "badge badge-danger";
+    badge.textContent = "Error";
+    content.textContent = err.toString();
+  });
+}
+
+function applyCopilotReplacement() {
+  const textarea = document.getElementById("prose-textarea");
+  if (!textarea || !copilotSuggestedText) return;
+  const before = textarea.value.substring(0, copilotSelectionStart);
+  const after = textarea.value.substring(copilotSelectionEnd);
+  textarea.value = before + copilotSuggestedText + after;
+  closeCopilotPreview();
+}
+
+function insertCopilotBelow() {
+  const textarea = document.getElementById("prose-textarea");
+  if (!textarea || !copilotSuggestedText) return;
+  const before = textarea.value.substring(0, copilotSelectionEnd);
+  const after = textarea.value.substring(copilotSelectionEnd);
+  textarea.value = before + "\n\n" + copilotSuggestedText + after;
+  closeCopilotPreview();
+}
+
+function closeCopilotPreview() {
+  const preview = document.getElementById("copilot-preview");
+  if (preview) preview.style.display = "none";
+}
+</script>
 {% endblock %}

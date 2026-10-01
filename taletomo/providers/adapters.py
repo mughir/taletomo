@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
@@ -49,6 +50,9 @@ class BaseProviderAdapter:
     ) -> ProviderResponse:
         raise NotImplementedError
 
+    def get_embedding(self, text: str, model: Optional[str] = None) -> List[float]:
+        raise NotImplementedError
+
 
 class FakeProviderAdapter(BaseProviderAdapter):
     """Deterministic fake provider for automated testing and local offline development."""
@@ -59,15 +63,34 @@ class FakeProviderAdapter(BaseProviderAdapter):
         self.simulate_failure: Optional[str] = None
         self.simulate_contradiction: bool = False
 
+    def get_embedding(self, text: str, model: Optional[str] = None) -> List[float]:
+        import hashlib, math
+        vec = [0.0] * 32
+        for word in text.lower().split():
+            h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+            vec[h % 32] += 1.0
+        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+        return [float(x / norm) for x in vec]
+
     def validate_credentials(self) -> Dict[str, Any]:
         return {
             "valid": True,
             "provider": "fake",
-            "models": ["mock-planning-v1", "mock-drafting-v1", "mock-critique-v1"],
+            "models": [
+                "mock-planning-v1",
+                "mock-drafting-v1",
+                "mock-critique-v1",
+                "mock-extraction-v1",
+                "mock-copilot-v1",
+                "mock-embedding-v1",
+            ],
             "context_limits": {
                 "mock-planning-v1": 250000,
                 "mock-drafting-v1": 250000,
                 "mock-critique-v1": 128000,
+                "mock-extraction-v1": 128000,
+                "mock-copilot-v1": 128000,
+                "mock-embedding-v1": 8192,
             },
         }
 
@@ -145,6 +168,27 @@ class FakeProviderAdapter(BaseProviderAdapter):
                     }
                 )
             content = json.dumps(findings)
+        elif "task: draft_scene" in prompt_lower:
+            scene_match = re.search(r"task:\s*draft_scene\s*\(scene\s*(\d+)", prompt_lower)
+            scene_num = int(scene_match.group(1)) if scene_match else 1
+            if scene_num == 1:
+                content = (
+                    "The rain pounded against the leaded glass of Alaric's study, streaking the dark panorama of the Grand Dominion. "
+                    "Beneath the flickering gaslamp, the vial of azure tincture glowed with an unsettling luminescence.\n\n"
+                    "Footsteps echoed on the cobblestones outside—rhythmic, heavy, and far too hurried for a midnight patrol. "
+                    "Alaric reached for his leather satchel with his good right hand, his shattered left wrist throbbing in the damp cold. "
+                    "'They shouldn't have arrived before dawn,' he muttered, blowing out the flame."
+                )
+            else:
+                content = (
+                    "When the front latch splintered, Alaric was already slipping through the iron grate into the damp darkness of the aqueduct. "
+                    "The cold subterranean water rushed past his boots as Captain Vance's shouting echoed from the street above."
+                )
+        elif "task: copilot" in prompt_lower:
+            content = (
+                "The bitter cold seeped through Alaric's threadbare cloak as he watched the gaslights flicker along the canal. "
+                "Every breath formed mist, vanishing into the damp stone arches of the Old Aqueduct."
+            )
         elif "task: draft_chapter" in prompt_lower:
             content = (
                 "The rain pounded against the leaded glass of Alaric's study, streaking the dark panorama of the Grand Dominion. "
@@ -268,6 +312,21 @@ class OpenAICompatibleAdapter(BaseProviderAdapter):
         if key:
             headers["Authorization"] = f"Bearer {key}"
         return headers
+
+    def get_embedding(self, text: str, model: Optional[str] = None) -> List[float]:
+        validate_provider_endpoint(self.config.endpoint_url, self.allowlist)
+        url = f"{self.config.endpoint_url.rstrip('/')}/embeddings"
+        model_name = model or self.config.get_model_for_task("embedding")
+        payload = {"input": text, "model": model_name}
+        try:
+            with httpx.Client(timeout=30.0, transport=self._transport) as client:
+                resp = client.post(url, headers=self._get_headers(), json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data.get("data", [{}])[0].get("embedding", [])
+        except Exception as e:
+            logger.warning(f"Failed to fetch embedding from provider: {e}")
+        return []
 
     def validate_credentials(self) -> Dict[str, Any]:
         validate_provider_endpoint(self.config.endpoint_url, self.allowlist)

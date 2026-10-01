@@ -38,6 +38,16 @@ class ProviderConfig(UUIDModel):
     default_planning_model = models.CharField(max_length=100, default="mock-planning-v1")
     default_drafting_model = models.CharField(max_length=100, default="mock-drafting-v1")
     default_critique_model = models.CharField(max_length=100, default="mock-critique-v1")
+    default_extraction_model = models.CharField(max_length=100, default="mock-extraction-v1")
+    default_copilot_model = models.CharField(max_length=100, default="mock-copilot-v1")
+    default_embedding_model = models.CharField(max_length=100, default="text-embedding-3-small")
+
+    # Task-to-model mapping matrix, e.g. {"drafting": "gpt-4o", "extraction": "gpt-4o-mini", "copilot": "gpt-4o"}
+    task_routing = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Task-to-model routing table",
+    )
 
     # Detailed capability profiles: { model_name: { context_limit: int, max_output: int, pricing: {...} } }
     model_profiles = models.JSONField(
@@ -50,12 +60,69 @@ class ProviderConfig(UUIDModel):
     per_job_token_limit = models.PositiveIntegerField(default=128000)
     daily_token_limit = models.PositiveIntegerField(default=1000000)
     daily_cost_limit_usd = models.DecimalField(max_digits=8, decimal_places=4, default=Decimal("20.0000"))
+    monthly_cost_limit_usd = models.DecimalField(max_digits=8, decimal_places=4, default=Decimal("50.0000"))
 
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-is_default", "name"]
+
+    def get_model_for_task(self, task: str) -> str:
+        """Resolves the configured model name for a specific pipeline task."""
+        if isinstance(self.task_routing, dict) and self.task_routing.get(task):
+            return str(self.task_routing[task])
+        fallbacks = {
+            "drafting": self.default_drafting_model,
+            "planning": self.default_planning_model,
+            "critique": self.default_critique_model,
+            "extraction": self.default_extraction_model or self.default_critique_model,
+            "copilot": self.default_copilot_model or self.default_drafting_model,
+            "embedding": self.default_embedding_model,
+        }
+        return fallbacks.get(task, self.default_drafting_model)
+
+    def check_budget_limits(self, estimated_cost_usd: Decimal = Decimal("0.0"), user=None) -> tuple[bool, str]:
+        """Validates that a new operation's estimated cost won't exceed daily or monthly spending limits."""
+        target_user = user or self.user
+        if not target_user:
+            return True, ""
+
+        from django.utils import timezone
+        now = timezone.now()
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # Sum reconciled costs for today and this month
+        day_qs = BudgetReservation.objects.filter(
+            user=target_user,
+            status=BudgetReservation.Status.RECONCILED,
+            updated_at__gte=start_of_day,
+        )
+        month_qs = BudgetReservation.objects.filter(
+            user=target_user,
+            status=BudgetReservation.Status.RECONCILED,
+            updated_at__gte=start_of_month,
+        )
+
+        spent_today = sum((r.confirmed_cost_usd for r in day_qs), Decimal("0.0000"))
+        spent_month = sum((r.confirmed_cost_usd for r in month_qs), Decimal("0.0000"))
+
+        if self.daily_cost_limit_usd > Decimal("0") and (spent_today + estimated_cost_usd) > self.daily_cost_limit_usd:
+            return (
+                False,
+                f"Daily cost limit of ${self.daily_cost_limit_usd:.2f} reached "
+                f"(spent today: ${spent_today:.4f}, estimated: ${estimated_cost_usd:.4f}).",
+            )
+
+        if self.monthly_cost_limit_usd > Decimal("0") and (spent_month + estimated_cost_usd) > self.monthly_cost_limit_usd:
+            return (
+                False,
+                f"Monthly cost limit of ${self.monthly_cost_limit_usd:.2f} reached "
+                f"(spent this month: ${spent_month:.4f}, estimated: ${estimated_cost_usd:.4f}).",
+            )
+
+        return True, ""
 
     def save(self, *args, **kwargs):
         if self.is_default and self.user_id:

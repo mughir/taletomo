@@ -139,9 +139,14 @@ class CanonExtractionService:
         modifying existing proposals.
         """
         prompt = CanonExtractionService.build_extraction_prompt(chapter, draft.prose_content)
+        extraction_model = None
+        if hasattr(adapter, "config") and adapter.config and hasattr(adapter.config, "get_model_for_task"):
+            extraction_model = adapter.config.get_model_for_task("extraction")
+
         resp = adapter.generate_text(
             prompt=prompt,
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
+            model=extraction_model,
             max_tokens=2000,
             temperature=0.0,
         )
@@ -283,9 +288,9 @@ class CanonExtractionService:
         proposals = proposals[:MAX_PROPOSALS_PER_EXTRACTION]
 
         with transaction.atomic():
-            # Re-extraction of the same draft replaces only pending proposals;
+            # Re-extraction for the chapter replaces pending proposals;
             # author-reviewed items are preserved as the review trail.
             ProposedCanonItem.objects.filter(
-                chapter=chapter, draft=draft, status=ProposedCanonItem.Status.PROPOSED
+                chapter=chapter, status=ProposedCanonItem.Status.PROPOSED
             ).delete()
             return ProposedCanonItem.objects.bulk_create(proposals)

@@ -11,6 +11,18 @@ class CharacterRole(models.TextChoices):
     NEUTRAL = "neutral", "Neutral / Supporting"
 
 
+def compute_cosine_similarity(v1: list[float], v2: list[float]) -> float:
+    """Computes cosine similarity between two vector embeddings."""
+    if not v1 or not v2 or len(v1) != len(v2):
+        return 0.0
+    dot = sum(a * b for a, b in zip(v1, v2))
+    norm_a = sum(a * a for a in v1) ** 0.5
+    norm_b = sum(b * b for b in v2) ** 0.5
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return float(dot / (norm_a * norm_b))
+
+
 class Character(UUIDModel):
     """Structured character record with wounds, abilities, and internal beliefs."""
 
@@ -33,6 +45,7 @@ class Character(UUIDModel):
         help_text="What this character believes is true vs world truth",
     )
     metadata = models.JSONField(default=dict, blank=True)
+    embedding = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -50,6 +63,7 @@ class Location(UUIDModel):
     description = models.TextField(blank=True, default="")
     travel_rules = models.TextField(blank=True, default="")
     current_state = models.TextField(blank=True, default="")
+    embedding = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -191,6 +205,7 @@ class CanonFact(UUIDModel):
     canonical_status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.CONFIRMED
     )
+    embedding = models.JSONField(default=list, blank=True)
 
     class Meta:
         indexes = [
@@ -211,6 +226,7 @@ class StoryEvent(UUIDModel):
     summary = models.TextField()
     payload = models.JSONField(default=dict, blank=True)
     committed_at = models.DateTimeField(auto_now_add=True)
+    embedding = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["committed_at"]
