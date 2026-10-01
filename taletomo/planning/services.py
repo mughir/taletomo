@@ -545,13 +545,15 @@ class PlanningService:
             src_obj = char_id_map.get(rel.source_character_id)
             tgt_obj = char_id_map.get(rel.target_character_id)
             if src_obj and tgt_obj:
-                CharacterRelationship.objects.create(
+                CharacterRelationship.objects.update_or_create(
                     project=branched_project,
                     source_character=src_obj,
                     target_character=tgt_obj,
-                    relationship_type=rel.relationship_type,
-                    description=rel.description,
-                    dynamic_status=rel.dynamic_status,
+                    defaults={
+                        "relationship_type": rel.relationship_type,
+                        "description": rel.description,
+                        "dynamic_status": rel.dynamic_status,
+                    },
                 )
 
         for loc in source_project.locations.all():

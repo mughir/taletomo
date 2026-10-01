@@ -353,7 +353,7 @@ class GenerationPipeline:
             if (
                 reservation
                 and reservation.status == BudgetReservation.Status.RESERVED
-                and not job.error_details.get("unknown_outcome")
+                and not (job.error_details or {}).get("unknown_outcome")
             ):
                 reservation.release()
             if attempt and attempt.outcome == "started":
