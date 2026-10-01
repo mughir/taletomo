@@ -1,5 +1,6 @@
 <div class="subnav" role="navigation" aria-label="Project Sections">
   <a href="{% url 'taletomo:project_overview' project.id %}" class="subnav-link {% if active_tab == 'overview' %}active{% endif %}">Overview</a>
+  <a href="{% url 'taletomo:project_read' project.id %}" class="subnav-link {% if active_tab == 'read' %}active{% endif %}">📖 Read Novel</a>
   <a href="{% url 'taletomo:project_outline' project.id %}" class="subnav-link {% if active_tab == 'outline' %}active{% endif %}">Outline ({{ project.target_chapters }} Chs)</a>
   <a href="{% url 'taletomo:project_bible' project.id %}" class="subnav-link {% if active_tab == 'bible' %}active{% endif %}">Tomo's Memory (Bible)</a>
   <a href="{% url 'taletomo:project_characters' project.id %}" class="subnav-link {% if active_tab == 'characters' %}active{% endif %}">Characters</a>

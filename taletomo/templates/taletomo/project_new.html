@@ -171,21 +171,26 @@
       <small class="field-note">Tropes like <strong>Gender Bender</strong>, Reincarnation, or System live in novel tags; gender and status (Female Protagonist, Wealthy Protagonist) mix into the protagonist picker. Every term's definition and example guide generation.</small>
     </section>
 
-    <div class="form-actions">
+    <div class="form-actions" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
       <a href="{% url 'taletomo:project_list' %}" class="btn btn-quiet">Cancel</a>
-      <button type="submit" class="btn btn-primary">Create novel and outline <span aria-hidden="true">→</span></button>
+      <button type="submit" name="action" value="read" class="btn btn-primary" style="font-weight: 600;">
+        📖 Create &amp; Start Reading Immediately <span aria-hidden="true">→</span>
+      </button>
+      <button type="submit" name="action" value="outline" class="btn btn-secondary">
+        ✏️ Create &amp; Open Outline
+      </button>
     </div>
   </form>
 
   <aside class="setup-aside" aria-label="What happens next">
     <div class="setup-aside-sticky">
       <p class="eyebrow">WHAT HAPPENS NEXT</p>
-      <h2>A starting structure, not a locked plan.</h2>
-      <p>TaleTomo creates the first volume, opening arc, and five chapter outlines. You stay in control of what changes and what becomes canon.</p>
+      <h2>Enjoy the story or shape the craft.</h2>
+      <p>Whether you just want to sit back and read, or carefully craft every plot turn, TaleTomo adapts to you.</p>
       <ol class="setup-steps">
-        <li><span>01</span><div><strong>Shape the idea</strong><small>Start with the premise you entered.</small></div></li>
-        <li><span>02</span><div><strong>Review the outline</strong><small>Adjust the opening chapters before drafting.</small></div></li>
-        <li><span>03</span><div><strong>Connect an AI provider</strong><small>Add your provider later in settings, when you’re ready.</small></div></li>
+        <li><span>01</span><div><strong>Start Reading Immediately</strong><small>Tomo drafts Chapter 1 so you can read right away.</small></div></li>
+        <li><span>02</span><div><strong>Autonomous Progression</strong><small>Advance chapter-by-chapter with a single click.</small></div></li>
+        <li><span>03</span><div><strong>Author Mode Anytime</strong><small>Switch to the editor whenever inspiration strikes.</small></div></li>
       </ol>
       <p class="setup-aside-note">Generated writing stays a draft until you choose to approve it.</p>
     </div>
