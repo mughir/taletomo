@@ -46,7 +46,10 @@
               <h3><a href="{% url 'taletomo:project_overview' p.id %}">{{ p.title }}</a></h3>
               {% if p.premise %}<p class="project-premise">{{ p.premise|truncatewords:24 }}</p>{% endif %}
             </div>
-            <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-secondary btn-sm btn-cta">Open outline <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <a href="{% url 'taletomo:project_read' p.id %}" class="btn btn-primary btn-sm">📖 Read</a>
+              <a href="{% url 'taletomo:project_outline' p.id %}" class="btn btn-secondary btn-sm btn-cta">Outline <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+            </div>
           </article>
         {% endfor %}
       </div>

@@ -25,6 +25,10 @@ urlpatterns = [
     path("projects/<uuid:project_id>/outline/", views.project_outline, name="project_outline"),
     path("projects/<uuid:project_id>/replan/", views.project_replan_horizon, name="project_replan_horizon"),
     path("projects/<uuid:project_id>/branch/", views.project_branch, name="project_branch"),
+    path("projects/<uuid:project_id>/read/", views.project_read, name="project_read"),
+    path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/read/", views.chapter_read, name="chapter_read"),
+    path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/read/next/", views.chapter_read_next, name="chapter_read_next"),
+    path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/read/generate/", views.chapter_read_generate, name="chapter_read_generate"),
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/plan/", views.chapter_plan, name="chapter_plan"),
 
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/edit/", views.chapter_edit, name="chapter_edit"),

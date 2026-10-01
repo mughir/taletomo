@@ -34,7 +34,8 @@
       </div>
 
       <div class="card-actions">
-        <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-primary btn-cta">Open outline &amp; plan <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+        <a href="{% url 'taletomo:project_read' project.id %}" class="btn btn-primary btn-cta">📖 Start Reading <span class="btn-cta-chip" aria-hidden="true">→</span></a>
+        <a href="{% url 'taletomo:project_outline' project.id %}" class="btn btn-secondary">Outline &amp; plan</a>
         <a href="{% url 'taletomo:project_bible' project.id %}" class="btn btn-secondary">Tomo’s memory (bible)</a>
         <a href="{% url 'taletomo:project_export' project.id %}" class="btn btn-secondary">Export novel</a>
       </div>

@@ -47,6 +47,7 @@ from taletomo.planning.models import (
     SeriesSpine,
     Volume,
 )
+from taletomo.planning.autopilot import AutoPilotService
 from taletomo.planning.services import PlanningService
 from taletomo.providers.adapters import ProviderGateway
 from taletomo.providers.models import BudgetReservation, ProviderConfig, ProviderType
@@ -204,6 +205,18 @@ def project_new(request):
             length_preset=length_preset,
             target_words_per_chapter=target_words,
         )
+
+        action = request.POST.get("action", "")
+        if action == "read":
+            ch1 = project.chapters.filter(chapter_number=1).first()
+            if ch1:
+                from taletomo.planning.autopilot import AutoPilotService
+                AutoPilotService.start_chapter_generation(project, ch1, request.user)
+                messages.success(
+                    request,
+                    f"Welcome to '{project.title}'! Tomo is drafting Chapter 1 so you can start reading immediately.",
+                )
+                return redirect("taletomo:chapter_read", project_id=project.id, chapter_id=ch1.id)
 
         messages.success(request, f"Project '{project.title}' initialized successfully!")
         return redirect("taletomo:project_overview", project_id=project.id)
@@ -877,6 +890,137 @@ def project_branch(request, project_id):
     return redirect("taletomo:project_overview", project_id=branched_project.id)
 
 
+@login_required
+def project_read(request, project_id):
+    """Direct reader entry point: jumps directly to the latest drafted chapter or Chapter 1."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    target_chapter = (
+        project.chapters.exclude(active_draft_id=None)
+        .order_by("-chapter_number")
+        .first()
+    )
+    if not target_chapter:
+        target_chapter = project.chapters.filter(chapter_number=1).first()
+    if not target_chapter:
+        target_chapter = project.chapters.order_by("chapter_number").first()
+
+    if not target_chapter:
+        messages.error(request, "No chapters found in this project.")
+        return redirect("taletomo:project_overview", project_id=project.id)
+
+    return redirect("taletomo:chapter_read", project_id=project.id, chapter_id=target_chapter.id)
+
+
+@login_required
+def chapter_read(request, project_id, chapter_id):
+    """Distraction-free, immersive novel reader mode for casual reading and binging."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    prev_chapter = (
+        Chapter.objects.filter(project=project, chapter_number__lt=chapter.chapter_number)
+        .order_by("-chapter_number")
+        .first()
+    )
+    next_chapter = (
+        Chapter.objects.filter(project=project, chapter_number__gt=chapter.chapter_number)
+        .order_by("chapter_number")
+        .first()
+    )
+
+    # Active draft resolution
+    active_draft = None
+    if chapter.active_draft_id:
+        active_draft = chapter.drafts.filter(id=chapter.active_draft_id).first()
+    if not active_draft:
+        active_draft = chapter.drafts.first()
+
+    # Active generation job for live progress / status
+    active_job = AutoPilotService.get_active_job(chapter)
+
+    # Next chapter draft availability
+    next_has_draft = bool(
+        next_chapter and (next_chapter.active_draft_id or next_chapter.drafts.exists())
+    )
+
+    # Reading stats
+    word_count = active_draft.word_count if active_draft else 0
+    reading_minutes = max(1, (word_count + 199) // 200) if word_count else 0
+
+    # Table of contents list with draft availability flags
+    all_chapters = list(
+        project.chapters.all()
+        .select_related("plan")
+        .order_by("chapter_number")
+    )
+    chapters_with_draft_ids = set(
+        DraftArtifact.objects.filter(chapter__project=project)
+        .values_list("chapter_id", flat=True)
+    )
+    for ch in all_chapters:
+        ch.has_draft = ch.id in chapters_with_draft_ids
+
+    context = {
+        "project": project,
+        "chapter": chapter,
+        "active_draft": active_draft,
+        "active_job": active_job,
+        "prev_chapter": prev_chapter,
+        "next_chapter": next_chapter,
+        "next_has_draft": next_has_draft,
+        "word_count": word_count,
+        "reading_minutes": reading_minutes,
+        "all_chapters": all_chapters,
+        "total_chapters": len(all_chapters),
+    }
+    return render(request, "taletomo/chapter_read.html", context)
+
+
+@login_required
+@require_POST
+def chapter_read_next(request, project_id, chapter_id):
+    """Auto-pilot progression: auto-commits current chapter and smoothly advances to next chapter."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    # 1. Auto-commit current chapter if not already locked
+    AutoPilotService.auto_advance_chapter(project, chapter, request.user)
+
+    # 2. Advance to next chapter
+    next_chapter = (
+        Chapter.objects.filter(project=project, chapter_number__gt=chapter.chapter_number)
+        .order_by("chapter_number")
+        .first()
+    )
+
+    if not next_chapter:
+        messages.info(request, "You have reached the end of the planned novel horizon!")
+        return redirect("taletomo:chapter_read", project_id=project.id, chapter_id=chapter.id)
+
+    # If next chapter does not have a draft, trigger generation automatically
+    if not next_chapter.active_draft_id and not next_chapter.drafts.exists():
+        AutoPilotService.start_chapter_generation(project, next_chapter, request.user)
+        messages.info(
+            request,
+            f"Tomo is crafting Chapter {next_chapter.chapter_number} in the background...",
+        )
+
+    return redirect("taletomo:chapter_read", project_id=project.id, chapter_id=next_chapter.id)
+
+
+@login_required
+@require_POST
+def chapter_read_generate(request, project_id, chapter_id):
+    """Triggers generation for the current chapter while remaining in Reader Mode."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    AutoPilotService.start_chapter_generation(project, chapter, request.user)
+    messages.info(
+        request,
+        f"Tomo is drafting Chapter {chapter.chapter_number}. It will appear here once ready!",
+    )
+    return redirect("taletomo:chapter_read", project_id=project.id, chapter_id=chapter.id)
 
 
 @login_required
