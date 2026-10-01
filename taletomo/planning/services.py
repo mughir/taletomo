@@ -441,6 +441,7 @@ class PlanningService:
             CanonFact,
             Character,
             Faction,
+            Item,
             Location,
             PlotThread,
             WorldRule,
@@ -585,6 +586,22 @@ class PlanningService:
                 title=rule.title,
                 rule_statement=rule.rule_statement,
                 forbidden_violations=rule.forbidden_violations,
+            )
+
+        char_name_map = {c.name.lower(): c for c in branched_project.characters.all()}
+        loc_name_map = {l.name.lower(): l for l in branched_project.locations.all()}
+        for it in source_project.items.all():
+            h_obj = char_name_map.get(it.current_holder.name.lower()) if it.current_holder else None
+            l_obj = loc_name_map.get(it.current_location.name.lower()) if it.current_location else None
+            Item.objects.create(
+                project=branched_project,
+                name=it.name,
+                description=it.description,
+                status_notes=it.status_notes,
+                is_destroyed=it.is_destroyed,
+                destroyed_at_chapter=it.destroyed_at_chapter,
+                current_holder=h_obj,
+                current_location=l_obj,
             )
 
         # 5. Clone Canon Facts and Plot Threads up to from_chapter

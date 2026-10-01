@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 from django.db import transaction
-from taletomo.canon.models import Character, Faction, WorldRule
+from taletomo.canon.models import Character, Faction, Location, WorldRule
 from taletomo.planning.models import Project
 from taletomo.planning.services import PlanningService
 from taletomo.providers.adapters import BaseProviderAdapter, ProviderGateway
@@ -278,5 +278,16 @@ class WorldbuildingWizardService:
                     rule_statement=rule_text,
                     forbidden_violations=f"Do not contradict rule: {rule_text[:50]}",
                 )
+
+        # 4. Create Locations
+        for loc in wizard_data.get("locations", []):
+            Location.objects.create(
+                project=project,
+                name=loc.get("name", "Unnamed Location"),
+                description=loc.get("description", ""),
+                region=loc.get("region", ""),
+                coord_x=float(loc.get("coord_x", 0.0)),
+                coord_y=float(loc.get("coord_y", 0.0)),
+            )
 
         return project

@@ -8,6 +8,7 @@ from taletomo.canon.models import (
     CanonFact,
     Character,
     Faction,
+    Item,
     Location,
     PlotThread,
     ProposedCanonItem,
@@ -637,6 +638,18 @@ class ExportService:
                     }
                     for ev in project.story_events.select_related("chapter").all()
                 ],
+                "items": [
+                    {
+                        "name": it.name,
+                        "description": it.description,
+                        "status_notes": it.status_notes,
+                        "is_destroyed": it.is_destroyed,
+                        "destroyed_at_chapter": it.destroyed_at_chapter,
+                        "current_holder_name": it.current_holder.name if it.current_holder else "",
+                        "current_location_name": it.current_location.name if it.current_location else "",
+                    }
+                    for it in project.items.select_related("current_holder", "current_location").all()
+                ],
                 "proposed_items": [
                     {
                         "chapter_number": item.chapter.chapter_number,
@@ -944,6 +957,22 @@ class ExportService:
                 provenance=f.get("provenance", "Restored"),
                 confidence=f.get("confidence", 1.0),
                 canonical_status=f.get("canonical_status", CanonFact.Status.CONFIRMED),
+            )
+
+        char_name_map = {c.name.lower(): c for c in Character.objects.filter(project=project)}
+        loc_name_map = {l.name.lower(): l for l in Location.objects.filter(project=project)}
+        for it_data in canon_data.get("items", []):
+            h_name = str(it_data.get("current_holder_name", "")).strip().lower()
+            l_name = str(it_data.get("current_location_name", "")).strip().lower()
+            Item.objects.create(
+                project=project,
+                name=it_data["name"],
+                description=it_data.get("description", ""),
+                status_notes=it_data.get("status_notes", ""),
+                is_destroyed=it_data.get("is_destroyed", False),
+                destroyed_at_chapter=it_data.get("destroyed_at_chapter"),
+                current_holder=char_name_map.get(h_name),
+                current_location=loc_name_map.get(l_name),
             )
 
         for p in canon_data.get("proposed_items", []):

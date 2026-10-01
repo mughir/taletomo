@@ -3,7 +3,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
-from taletomo.canon.models import CanonFact, Character, Faction, Location, PlotThread, TruthScope, WorldRule
+from taletomo.canon.models import CanonFact, Character, Faction, Item, Location, PlotThread, TruthScope, WorldRule
 from taletomo.context.budget import BudgetCalculator, TokenBudget
 from taletomo.context.models import ContextManifest
 from taletomo.generation.models import DraftArtifact
@@ -23,6 +23,7 @@ CANDIDATE_CAPS = {
     "rules": 30,
     "threads": 30,
     "facts": 80,
+    "items": 30,
 }
 
 _STOPWORDS = frozenset(
@@ -355,6 +356,23 @@ class ContextAssembler:
             t_desc = f"Active Thread: {thread.title} ({thread.category}) - Setup Ch {thread.setup_chapter}"
             if record_entry(str(thread.id), "state", t_desc, priority=2, score=score):
                 state_parts.append(t_desc)
+
+        items = ranked(
+            list(
+                Item.objects.filter(project=project).select_related("current_holder", "current_location")[
+                    : CANDIDATE_CAPS["items"]
+                ]
+            ),
+            lambda it: [it.name, it.description],
+            lambda it: it.name,
+        )
+        for it, score in items:
+            h_str = f"Held by: {it.current_holder.name}" if it.current_holder else "Unheld"
+            l_str = f"At: {it.current_location.name}" if it.current_location else ""
+            stat_str = f"Destroyed in Ch {it.destroyed_at_chapter}" if it.is_destroyed else "Intact"
+            it_desc = f"Item: {it.name}. Status: {stat_str}. {h_str}. {l_str}. Description: {it.description}".strip()
+            if record_entry(str(it.id), "state", it_desc, priority=2, score=score):
+                state_parts.append(it_desc)
 
         state_text = "\n".join(state_parts)
 

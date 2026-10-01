@@ -288,7 +288,7 @@ class GenerationPipeline:
 
             ContinuityChecker.check_and_persist(
                 chapter=chapter,
-                prose=resp.content,
+                prose=composite_prose,
                 draft_id=str(draft.id),
                 adapter=adapter,
             )
