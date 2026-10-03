@@ -234,7 +234,10 @@ class PlanningService:
         prev_summary = prev_chapter.current_summary if prev_chapter else ""
 
         open_threads = list(
-            PlotThread.objects.filter(project=project, status="open").order_by("setup_chapter")[:5]
+            PlotThread.objects.filter(
+                project=project,
+                status__in=[PlotThread.Status.OPEN, PlotThread.Status.PROGRESSING],
+            ).order_by("setup_chapter")[:10]
         )
         threads_summary = [f"{t.title} ({t.category})" for t in open_threads]
 

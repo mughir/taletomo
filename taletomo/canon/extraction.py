@@ -152,6 +152,10 @@ class CanonExtractionService:
         )
         parsed = CanonExtractionService.parse_extraction_response(resp.content)
 
+        raw_model = getattr(resp, "model", None)
+        raw_model_name = getattr(resp, "model_name", None)
+        model_name_val = raw_model if isinstance(raw_model, str) else (raw_model_name if isinstance(raw_model_name, str) else "")
+
         proposals: List[ProposedCanonItem] = []
 
         def _confidence(val: Any) -> float:
@@ -202,7 +206,7 @@ class CanonExtractionService:
                     payload=payload,
                     summary=f"{subject} — {predicate}: {value}"[:300],
                     confidence=_confidence(claim.get("confidence")),
-                    extracted_by_model=resp.model or "",
+                    extracted_by_model=model_name_val,
                 )
             )
 
@@ -223,7 +227,7 @@ class CanonExtractionService:
                     payload=payload,
                     summary=summary[:300],
                     confidence=_confidence(event.get("confidence")),
-                    extracted_by_model=resp.model or "",
+                    extracted_by_model=model_name_val,
                 )
             )
 
@@ -246,7 +250,7 @@ class CanonExtractionService:
                     payload=payload,
                     summary=f"{title}: {operation}"[:300],
                     confidence=_confidence(thread.get("confidence")),
-                    extracted_by_model=resp.model or "",
+                    extracted_by_model=model_name_val,
                 )
             )
 
@@ -281,7 +285,7 @@ class CanonExtractionService:
                     payload=payload,
                     summary=f"{character.name}: {field.replace('_', ' ')} → {value}"[:300],
                     confidence=_confidence(update.get("confidence", 0.85)),
-                    extracted_by_model=resp.model or "",
+                    extracted_by_model=model_name_val,
                 )
             )
 

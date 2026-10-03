@@ -490,28 +490,31 @@ class GenerationPipeline:
         new_scene_prose = resp.content.strip()
 
         existing_chunks[idx] = new_scene_prose
+        while existing_chunks and not existing_chunks[-1].strip():
+            existing_chunks.pop()
         composite_prose = SCENE_DELIM.join(existing_chunks).strip()
         word_count = len(composite_prose.split())
 
-        max_v = DraftArtifact.objects.filter(chapter=chapter).aggregate(max_v=models.Max("version_number"))["max_v"]
-        version_number = (max_v + 1) if max_v else 1
+        with transaction.atomic():
+            max_v = DraftArtifact.objects.filter(chapter=chapter).aggregate(max_v=models.Max("version_number"))["max_v"]
+            version_number = (max_v + 1) if max_v else 1
 
-        new_draft = DraftArtifact.objects.create(
-            chapter=chapter,
-            version_number=version_number,
-            prose_content=composite_prose,
-            word_count=word_count,
-            model_name=model_name,
-            prompt_version="v2-scene-reroll",
-            context_manifest=active_draft.context_manifest if active_draft else None,
-            parent_draft=active_draft,
-            status=DraftStatus.UNDER_REVIEW,
-        )
+            new_draft = DraftArtifact.objects.create(
+                chapter=chapter,
+                version_number=version_number,
+                prose_content=composite_prose,
+                word_count=word_count,
+                model_name=model_name,
+                prompt_version="v2-scene-reroll",
+                context_manifest=active_draft.context_manifest if active_draft else None,
+                parent_draft=active_draft,
+                status=DraftStatus.UNDER_REVIEW,
+            )
 
-        chapter.status = Chapter.Status.REVIEW
-        chapter.active_draft_id = new_draft.id
-        chapter.current_word_count = word_count
-        chapter.save(update_fields=["status", "active_draft_id", "current_word_count", "updated_at"])
+            chapter.status = Chapter.Status.REVIEW
+            chapter.active_draft_id = new_draft.id
+            chapter.current_word_count = word_count
+            chapter.save(update_fields=["status", "active_draft_id", "current_word_count", "updated_at"])
 
         ContinuityChecker.check_and_persist(
             chapter=chapter,
