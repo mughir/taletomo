@@ -1,5 +1,6 @@
 import logging
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Any, Dict, List, Optional
 from django.db import models, transaction
 from django.utils import timezone
 from taletomo.canon.extraction import CanonExtractionService
@@ -370,3 +371,160 @@ class GenerationPipeline:
         finally:
             heartbeat.stop()
             job.release_lease(worker_id)
+
+    @classmethod
+    def execute_scene_reroll(
+        cls,
+        chapter: Chapter,
+        scene_order: int,
+        custom_instruction: str = "",
+        custom_adapter: Optional[BaseProviderAdapter] = None,
+        user: Optional[Any] = None,
+    ) -> DraftArtifact:
+        """Surgically re-drafts a single scene using bidirectional sandwich context and splices it into a new draft artifact."""
+        project = chapter.project
+        chapter_plan = getattr(chapter, "plan", None)
+        if not chapter_plan:
+            raise ValueError(f"Chapter {chapter.chapter_number} has no approved plan or scene breakdown.")
+
+        target_scene = chapter_plan.scenes.filter(scene_order=scene_order).first()
+        if not target_scene:
+            raise ValueError(f"Scene {scene_order} does not exist in Chapter {chapter.chapter_number}.")
+
+        all_scenes = list(chapter_plan.scenes.all().order_by("scene_order"))
+        total_scenes = len(all_scenes)
+
+        act_user = user or project.owner
+        adapter = custom_adapter or ProviderGateway.get_adapter(user=act_user, project=project)
+
+        model_name = "mock-drafting-v1"
+        model_profile: dict = {}
+        if hasattr(adapter, "config") and adapter.config:
+            if hasattr(adapter.config, "get_model_for_task"):
+                candidate = adapter.config.get_model_for_task("drafting")
+                if isinstance(candidate, str):
+                    model_name = candidate
+            else:
+                candidate = getattr(adapter.config, "default_drafting_model", "mock-drafting-v1")
+                if isinstance(candidate, str):
+                    model_name = candidate
+            profiles = adapter.config.model_profiles
+            if isinstance(profiles, dict):
+                model_profile = profiles.get(model_name) or {}
+
+        active_draft = (
+            DraftArtifact.objects.filter(id=chapter.active_draft_id).first()
+            if chapter.active_draft_id
+            else DraftArtifact.objects.filter(chapter=chapter).order_by("-version_number").first()
+        )
+        existing_prose = active_draft.prose_content if active_draft else ""
+
+        SCENE_DELIM = "\n\n* * *\n\n"
+        if SCENE_DELIM in existing_prose:
+            existing_chunks = existing_prose.split(SCENE_DELIM)
+        elif existing_prose.strip():
+            existing_chunks = [existing_prose]
+        else:
+            existing_chunks = []
+
+        while len(existing_chunks) < total_scenes:
+            existing_chunks.append("")
+
+        idx = scene_order - 1
+
+        prev_tail = ""
+        if idx > 0 and existing_chunks[idx - 1].strip():
+            words_prev = existing_chunks[idx - 1].strip().split()
+            prev_tail = " ".join(words_prev[-250:]) if len(words_prev) > 250 else existing_chunks[idx - 1].strip()
+
+        next_head = ""
+        if idx + 1 < len(existing_chunks) and existing_chunks[idx + 1].strip():
+            words_next = existing_chunks[idx + 1].strip().split()
+            next_head = " ".join(words_next[:250]) if len(words_next) > 250 else existing_chunks[idx + 1].strip()
+
+        target_words = target_scene.estimated_words or (project.target_words_per_chapter // max(1, total_scenes))
+        output_tokens = BudgetCalculator.estimate_output_tokens(
+            target_words=target_words,
+            max_output=model_profile.get("max_output"),
+        )
+
+        system_prompt = (
+            "You are a master fiction author drafting an individual scene for a serialized novel. "
+            "Write immersive, vivid, atmospheric prose that transitions seamlessly from preceding events "
+            "and connects naturally with following events. Output ONLY the narrative prose for this scene."
+        )
+
+        prompt_parts = [
+            f"TASK: DRAFT_SCENE_REROLL (Scene {target_scene.scene_order} of {total_scenes})",
+            f"Project: {project.title} (Genre: {project.genre}, Tone: {project.tone}, POV: {project.pov}, Tense: {project.tense})",
+            f"Chapter: {chapter.chapter_number} - {chapter.title}",
+            f"Scene Objective: {target_scene.objective}",
+        ]
+        if target_scene.conflict:
+            prompt_parts.append(f"Scene Conflict: {target_scene.conflict}")
+        if target_scene.characters:
+            chars_str = ", ".join(target_scene.characters) if isinstance(target_scene.characters, list) else str(target_scene.characters)
+            prompt_parts.append(f"Characters Present: {chars_str}")
+        if target_scene.setting:
+            prompt_parts.append(f"Setting: {target_scene.setting}")
+        prompt_parts.append(f"Scene Target Length: ~{target_words} words")
+
+        if custom_instruction:
+            prompt_parts.append(f"SPECIAL AUTHOR REROLL DIRECTIVE: {custom_instruction}")
+
+        if prev_tail:
+            prompt_parts.append(f"### PRECEDING SCENE ENDING (continue seamlessly from this moment):\n...{prev_tail}")
+
+        if next_head:
+            prompt_parts.append(f"### SUCCEEDING SCENE OPENING (lead naturally into this moment):\n{next_head}...")
+
+        prompt_parts.append(f"\nWrite only the narrative prose for Scene {target_scene.scene_order}:")
+        full_prompt = "\n\n".join(prompt_parts)
+
+        resp = adapter.generate_text(
+            prompt=full_prompt,
+            system_prompt=system_prompt,
+            model=model_name,
+            max_tokens=output_tokens,
+        )
+        new_scene_prose = resp.content.strip()
+
+        existing_chunks[idx] = new_scene_prose
+        composite_prose = SCENE_DELIM.join(existing_chunks).strip()
+        word_count = len(composite_prose.split())
+
+        max_v = DraftArtifact.objects.filter(chapter=chapter).aggregate(max_v=models.Max("version_number"))["max_v"]
+        version_number = (max_v + 1) if max_v else 1
+
+        new_draft = DraftArtifact.objects.create(
+            chapter=chapter,
+            version_number=version_number,
+            prose_content=composite_prose,
+            word_count=word_count,
+            model_name=model_name,
+            prompt_version="v2-scene-reroll",
+            context_manifest=active_draft.context_manifest if active_draft else None,
+            parent_draft=active_draft,
+            status=DraftStatus.UNDER_REVIEW,
+        )
+
+        chapter.status = Chapter.Status.REVIEW
+        chapter.active_draft_id = new_draft.id
+        chapter.current_word_count = word_count
+        chapter.save(update_fields=["status", "active_draft_id", "current_word_count", "updated_at"])
+
+        ContinuityChecker.check_and_persist(
+            chapter=chapter,
+            prose=composite_prose,
+            draft_id=str(new_draft.id),
+            adapter=adapter,
+        )
+
+        try:
+            CanonExtractionService.extract_from_draft(
+                chapter=chapter, draft=new_draft, adapter=adapter
+            )
+        except Exception:
+            logger.exception("Canon extraction during scene re-roll failed (non-fatal)")
+
+        return new_draft

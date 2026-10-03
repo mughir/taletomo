@@ -70,9 +70,9 @@ class Character(UUIDModel):
         if self.name and self.name.strip():
             name_clean = self.name.strip()
             variants.append(name_clean)
-            first_token = name_clean.split()[0]
-            if len(first_token) >= 3 and first_token.lower() != name_clean.lower():
-                variants.append(first_token)
+            for token in name_clean.split():
+                if len(token) >= 3 and token.lower() != name_clean.lower():
+                    variants.append(token)
         for alias in (self.aliases or []):
             alias_clean = str(alias).strip()
             if len(alias_clean) >= 2:
@@ -188,6 +188,14 @@ class Item(UUIDModel):
     )
     is_destroyed = models.BooleanField(default=False)
     destroyed_at_chapter = models.PositiveIntegerField(null=True, blank=True)
+    plot_thread = models.ForeignKey(
+        "PlotThread",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="linked_items",
+        help_text="Plot thread or mystery this artifact is tied to",
+    )
     status_notes = models.TextField(blank=True, default="")
 
     class Meta:
@@ -284,6 +292,11 @@ class PlotThread(UUIDModel):
     )
     setup_chapter = models.PositiveIntegerField(default=1)
     payoff_chapter = models.PositiveIntegerField(null=True, blank=True)
+    last_mentioned_chapter = models.PositiveIntegerField(default=1)
+    dormancy_threshold = models.PositiveIntegerField(
+        default=10,
+        help_text="Number of chapters before an unmentioned thread is flagged as dormant",
+    )
     notes = models.TextField(blank=True, default="")
 
     class Meta:
@@ -295,6 +308,41 @@ class PlotThread(UUIDModel):
     @property
     def resolution_chapter(self):
         return self.payoff_chapter
+
+    def is_dormant(self, current_chapter_number: int) -> bool:
+        """Determines if the thread has not been mentioned for more than the dormancy threshold."""
+        if self.status not in [self.Status.OPEN, self.Status.PROGRESSING]:
+            return False
+        return (current_chapter_number - self.last_mentioned_chapter) >= self.dormancy_threshold
+
+    def chapters_since_mention(self, current_chapter_number: int) -> int:
+        return max(0, current_chapter_number - self.last_mentioned_chapter)
+
+
+class PlotThreadBreadcrumb(UUIDModel):
+    """Foreshadowing clue, progression beat, or payoff milestone linked to a narrative thread."""
+
+    class BreadcrumbType(models.TextChoices):
+        CLUE = "clue", "Foreshadowing / Clue"
+        PROGRESSION = "progression", "Progress / Escalation"
+        TWIST = "twist", "Revelation / Complication"
+        PAYOFF = "payoff", "Climax / Payoff"
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="thread_breadcrumbs")
+    plot_thread = models.ForeignKey(PlotThread, on_delete=models.CASCADE, related_name="breadcrumbs")
+    chapter_number = models.PositiveIntegerField(default=1)
+    breadcrumb_type = models.CharField(
+        max_length=30, choices=BreadcrumbType.choices, default=BreadcrumbType.CLUE
+    )
+    description = models.TextField()
+    is_discovered = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["chapter_number", "created_at"]
+
+    def __str__(self):
+        return f"Ch {self.chapter_number} [{self.get_breadcrumb_type_display()}]: {self.plot_thread.title}"
 
 
 class TruthScope(models.TextChoices):

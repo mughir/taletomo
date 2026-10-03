@@ -21,6 +21,7 @@ urlpatterns = [
     path("projects/<uuid:project_id>/factions/", views.project_factions, name="project_factions"),
     path("projects/<uuid:project_id>/rules/", views.project_rules, name="project_rules"),
     path("projects/<uuid:project_id>/threads/", views.project_threads, name="project_threads"),
+    path("projects/<uuid:project_id>/threads/matrix/", views.project_threads_matrix, name="project_threads_matrix"),
     path("projects/<uuid:project_id>/timeline/", views.project_timeline, name="project_timeline"),
     path("projects/<uuid:project_id>/outline/", views.project_outline, name="project_outline"),
     path("projects/<uuid:project_id>/replan/", views.project_replan_horizon, name="project_replan_horizon"),
@@ -33,6 +34,7 @@ urlpatterns = [
 
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/edit/", views.chapter_edit, name="chapter_edit"),
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/copilot/", views.chapter_copilot_api, name="chapter_copilot_api"),
+    path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/scenes/<int:scene_order>/reroll/", views.chapter_scene_reroll, name="chapter_scene_reroll"),
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/generate/", views.chapter_generate, name="chapter_generate"),
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/approve-draft/", views.chapter_approve_draft, name="chapter_approve_draft"),
     path("projects/<uuid:project_id>/chapters/<uuid:chapter_id>/commit-canon/", views.chapter_commit_canon, name="chapter_commit_canon"),

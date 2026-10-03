@@ -38,6 +38,14 @@ class ProseCoPilotService:
         "fix_continuity": (
             "Revise the passage to strictly respect canon rules, active character injuries/wounds, and physical scene constraints."
         ),
+        "voice_align": (
+            "Revise dialogue, verbal mannerisms, and spoken reactions of the target character to strictly reflect their distinct dialogue style, "
+            "vocabulary level, cadence, and idioms without altering the narrative outcome."
+        ),
+        "infill_bridge": (
+            "Write a seamless narrative bridge or transition connecting the preceding moment to the succeeding moment, "
+            "preserving pacing, sensory atmosphere, and spatial continuity."
+        ),
     }
 
     @staticmethod
@@ -94,6 +102,7 @@ class ProseCoPilotService:
         context_before: str = "",
         context_after: str = "",
         custom_instruction: str = "",
+        target_character_name: Optional[str] = None,
         custom_adapter: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Processes an inline prose selection, produces an AI revision, and returns visual diffs."""
@@ -137,15 +146,26 @@ class ProseCoPilotService:
         # Inject character voice & speech guidelines
         from taletomo.canon.models import find_project_character
 
+        target_char_obj = find_project_character(project, target_character_name) if target_character_name else None
+        if target_char_obj:
+            prompt_sections.append(
+                f"TARGET CHARACTER VOICE PROFILE (RIGID REQUIREMENT):\n"
+                f"- Character: {target_char_obj.name} ({target_char_obj.get_role_display()})\n"
+                f"- Distinct Dialogue Style: {target_char_obj.dialogue_style or 'Natural, contextual'}\n"
+                f"- Physical Demeanor & Presence: {target_char_obj.appearance or 'Standard'}\n"
+                f"- Key Traits: {', '.join(target_char_obj.traits) if target_char_obj.traits else 'N/A'}\n"
+                f"MANDATE: Rewrite all spoken dialogue and reactions for {target_char_obj.name} so their distinct cadence, idioms, and voice profile are unmistakable."
+            )
+
         pov_char_obj = find_project_character(project, pov_char) if pov_char else None
         voice_guidelines = []
-        if pov_char_obj and pov_char_obj.dialogue_style:
+        if pov_char_obj and pov_char_obj.dialogue_style and pov_char_obj != target_char_obj:
             voice_guidelines.append(f"- {pov_char_obj.name} (POV): {pov_char_obj.dialogue_style}")
         for c in project.characters.filter(dialogue_style__isnull=False).exclude(dialogue_style=""):
-            if c != pov_char_obj and any(v.lower() in cleaned_text.lower() for v in c.get_name_variants()):
+            if c != pov_char_obj and c != target_char_obj and any(v.lower() in cleaned_text.lower() for v in c.get_name_variants()):
                 voice_guidelines.append(f"- {c.name}: {c.dialogue_style}")
         if voice_guidelines:
-            prompt_sections.append("CHARACTER VOICE GUIDELINES:\n" + "\n".join(voice_guidelines))
+            prompt_sections.append("OTHER CHARACTER VOICE GUIDELINES:\n" + "\n".join(voice_guidelines))
 
         if context_before.strip():
             # Include last ~300 chars of preceding text for seamless syntactic flow
@@ -195,6 +215,8 @@ class ProseCoPilotService:
             "intensify_tension": "Compressed sentence structure and heightened visceral urgency.",
             "expand": "Expanded worldbuilding textures and character interiority.",
             "fix_continuity": "Harmonized physical actions with canon wounds and world rules.",
+            "voice_align": f"Re-voiced dialogue to match {target_char_obj.name if target_char_obj else 'character'}'s distinct dialogue style and verbal cadence.",
+            "infill_bridge": "Synthesized a seamless narrative bridge connecting adjacent scenes.",
         }
         explanation = explanation_map.get(action_key, "Applied editorial polish and stylistic refinement.")
         if custom_instruction:

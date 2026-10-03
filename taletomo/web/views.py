@@ -1,7 +1,10 @@
 import difflib
 import json
+import logging
 import uuid
 from decimal import Decimal
+
+logger = logging.getLogger(__name__)
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login as auth_login
 from django.contrib.auth.decorators import login_required
@@ -21,8 +24,10 @@ from taletomo.canon.models import (
     CharacterRelationship,
     CharacterRole,
     Faction,
+    Item,
     Location,
     PlotThread,
+    PlotThreadBreadcrumb,
     ProposedCanonItem,
     StoryEvent,
     TimelineEvent,
@@ -722,7 +727,107 @@ def project_threads(request, project_id):
         return redirect("taletomo:project_threads", project_id=project.id)
 
     threads = project.plot_threads.all()
-    return render(request, "taletomo/project_threads.html", {"project": project, "threads": threads})
+    latest_chapter = Chapter.objects.filter(project=project).order_by("-chapter_number").first()
+    current_chapter_num = latest_chapter.chapter_number if latest_chapter else 1
+
+    threads_data = []
+    for t in threads:
+        threads_data.append({
+            "thread": t,
+            "is_dormant": t.is_dormant(current_chapter_num),
+            "gap": t.chapters_since_mention(current_chapter_num),
+            "linked_items": list(t.linked_items.all()),
+        })
+
+    return render(
+        request,
+        "taletomo/project_threads.html",
+        {"project": project, "threads_data": threads_data, "current_chapter_num": current_chapter_num},
+    )
+
+
+@login_required
+def project_threads_matrix(request, project_id):
+    """Visual horizontal matrix of plot threads, dormancy telemetry, breadcrumb clues, and linked Chekhov guns."""
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        if action == "add_breadcrumb":
+            thread_id = request.POST.get("thread_id")
+            thread = get_object_or_404(PlotThread, id=thread_id, project=project)
+            try:
+                ch_num = int(request.POST.get("chapter_number", 1))
+            except (TypeError, ValueError):
+                ch_num = 1
+            b_type = request.POST.get("breadcrumb_type", PlotThreadBreadcrumb.BreadcrumbType.CLUE)
+            desc = request.POST.get("description", "").strip()
+            if desc:
+                PlotThreadBreadcrumb.objects.create(
+                    project=project,
+                    plot_thread=thread,
+                    chapter_number=ch_num,
+                    breadcrumb_type=b_type,
+                    description=desc,
+                )
+                if ch_num > thread.last_mentioned_chapter:
+                    thread.last_mentioned_chapter = ch_num
+                    thread.save(update_fields=["last_mentioned_chapter"])
+                messages.success(request, f"Breadcrumb clue added to thread '{thread.title}'.")
+        elif action == "link_item":
+            thread_id = request.POST.get("thread_id")
+            item_id = request.POST.get("item_id")
+            thread = get_object_or_404(PlotThread, id=thread_id, project=project)
+            item = get_object_or_404(Item, id=item_id, project=project)
+            item.plot_thread = thread
+            item.save(update_fields=["plot_thread"])
+            messages.success(request, f"Linked artifact '{item.name}' (Chekhov's Gun) to thread '{thread.title}'.")
+        elif action == "unlink_item":
+            item_id = request.POST.get("item_id")
+            item = get_object_or_404(Item, id=item_id, project=project)
+            item.plot_thread = None
+            item.save(update_fields=["plot_thread"])
+            messages.success(request, f"Unlinked artifact '{item.name}'.")
+        return redirect("taletomo:project_threads_matrix", project_id=project.id)
+
+    latest_chapter = Chapter.objects.filter(project=project).order_by("-chapter_number").first()
+    current_chapter_num = latest_chapter.chapter_number if latest_chapter else 1
+
+    threads = list(project.plot_threads.all().prefetch_related("breadcrumbs", "linked_items"))
+    matrix_threads = []
+    dormant_count = 0
+    resolved_count = 0
+
+    for t in threads:
+        is_dormant = t.is_dormant(current_chapter_num)
+        if is_dormant:
+            dormant_count += 1
+        if t.status in [PlotThread.Status.RESOLVED, PlotThread.Status.ABANDONED]:
+            resolved_count += 1
+
+        matrix_threads.append({
+            "thread": t,
+            "is_dormant": is_dormant,
+            "gap": t.chapters_since_mention(current_chapter_num),
+            "breadcrumbs": list(t.breadcrumbs.all().order_by("chapter_number")),
+            "linked_items": list(t.linked_items.all()),
+        })
+
+    unlinked_items = list(project.items.filter(plot_thread__isnull=True))
+
+    return render(
+        request,
+        "taletomo/project_threads_matrix.html",
+        {
+            "project": project,
+            "matrix_threads": matrix_threads,
+            "current_chapter_num": current_chapter_num,
+            "dormant_count": dormant_count,
+            "resolved_count": resolved_count,
+            "total_count": len(threads),
+            "unlinked_items": unlinked_items,
+        },
+    )
 
 
 @login_required
@@ -1138,6 +1243,7 @@ def chapter_copilot_api(request, project_id, chapter_id):
     context_before = str(body.get("context_before", ""))
     context_after = str(body.get("context_after", ""))
     custom_instruction = str(body.get("custom_instruction") or body.get("instruction") or "").strip()
+    target_character_name = str(body.get("target_character_name") or body.get("character_name") or "").strip() or None
 
     if not selected_text:
         return JsonResponse({"success": False, "error": "No prose text selected."}, status=400)
@@ -1152,11 +1258,45 @@ def chapter_copilot_api(request, project_id, chapter_id):
             context_before=context_before,
             context_after=context_after,
             custom_instruction=custom_instruction,
+            target_character_name=target_character_name,
         )
         return JsonResponse(result)
     except Exception as e:
         logger.error(f"Co-pilot generation failed: {e}", exc_info=True)
         return JsonResponse({"success": False, "error": f"Co-pilot request failed: {str(e)}"}, status=500)
+
+
+@login_required
+@require_POST
+def chapter_scene_reroll(request, project_id, chapter_id, scene_order):
+    """Surgically re-drafts a single scene in the chapter using sandwich context."""
+    from taletomo.generation.pipeline import GenerationPipeline
+
+    project = get_object_or_404(Project, id=project_id, owner=request.user)
+    chapter = get_object_or_404(Chapter, id=chapter_id, project=project)
+
+    if chapter.status == Chapter.Status.LOCKED:
+        messages.error(request, "Chapter is locked. Canonical chapters cannot be modified.")
+        return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
+
+    directive = request.POST.get("directive", "").strip()
+
+    try:
+        new_draft = GenerationPipeline.execute_scene_reroll(
+            chapter=chapter,
+            scene_order=scene_order,
+            custom_instruction=directive,
+            user=request.user,
+        )
+        messages.success(
+            request,
+            f"Scene {scene_order} successfully re-rolled into Draft Version {new_draft.version_number}.",
+        )
+    except Exception as e:
+        logger.error(f"Scene re-roll failed: {e}", exc_info=True)
+        messages.error(request, f"Scene re-roll failed: {str(e)}")
+
+    return redirect("taletomo:chapter_edit", project_id=project.id, chapter_id=chapter.id)
 
 
 @login_required

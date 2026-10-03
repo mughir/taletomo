@@ -182,6 +182,7 @@ class CanonService:
                 thread.notes = f"{thread.notes}\n{entry}" if thread.notes else entry
             if operation in ("close", "resolve") and thread.payoff_chapter is None:
                 thread.payoff_chapter = chapter.chapter_number
+            thread.last_mentioned_chapter = chapter.chapter_number
             thread.save()
 
         # 3.6 Apply approved character-state updates extracted from prose

@@ -12,6 +12,7 @@ class FindingCategory(models.TextChoices):
     RULE = "rule", "World Rule Violation"
     PLOT = "plot", "Plot Thread & Beat"
     POV = "pov", "POV & Tense Drift"
+    VOICE = "voice", "Character Voice & Dialogue"
     TERMINOLOGY = "terminology", "Terminology & Tone"
     LENGTH = "length", "Chapter Length"
     AUTOMATION = "automation", "Automation / Review Required"

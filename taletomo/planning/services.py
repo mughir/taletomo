@@ -363,6 +363,14 @@ class PlanningService:
                     ],
                 }
 
+            # Inject callback reminders for dormant plot threads
+            dormant_for_ch = [t for t in open_threads if t.is_dormant(ch_num)]
+            if dormant_for_ch and "required_beats" in contract_data and isinstance(contract_data["required_beats"], list):
+                for dt in dormant_for_ch[:2]:
+                    reminder = f"Narrative Callback: Reintroduce or foreshadow dormant plot thread '{dt.title}'."
+                    if reminder not in contract_data["required_beats"]:
+                        contract_data["required_beats"].append(reminder)
+
             # Update or create ChapterPlan
             plan, _ = ChapterPlan.objects.get_or_create(
                 chapter=ch,

@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Foreshadowing & Narrative Thread Matrix — {{ project.title }}{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+    <div>
+      <p class="eyebrow-pill">Narrative Lifespan & Mystery Architecture</p>
+      <h1>Foreshadowing &amp; Chekhov's Gun Matrix</h1>
+      <p>Monitor plot thread lifespans, detect dormant forgotten subplots, and link narrative artifacts across chapters.</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'taletomo:project_threads' project.id %}" class="btn btn-secondary">📋 Ledger View</a>
+      <a href="{% url 'taletomo:project_threads_matrix' project.id %}" class="btn btn-primary" aria-current="page">📊 Lifespan Matrix</a>
+    </div>
+  </div>
+</header>
+
+{% include "taletomo/_project_subnav.html" with active_tab="threads" %}
+
+<!-- Telemetry Summary Cards -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+  <div class="card" style="padding: 16px;">
+    <span style="font-size: 0.8rem; color: var(--ink-soft); text-transform: uppercase; font-weight: 600;">Total Threads</span>
+    <p style="font-size: 1.8rem; font-weight: 700; margin: 4px 0 0 0; color: var(--ink);">{{ total_count }}</p>
+  </div>
+  <div class="card" style="padding: 16px;">
+    <span style="font-size: 0.8rem; color: var(--ink-soft); text-transform: uppercase; font-weight: 600;">Current Horizon</span>
+    <p style="font-size: 1.8rem; font-weight: 700; margin: 4px 0 0 0; color: var(--primary);">Ch. {{ current_chapter_num }}</p>
+  </div>
+  <div class="card" style="padding: 16px; {% if dormant_count > 0 %}border-left: 4px solid var(--warning);{% endif %}">
+    <span style="font-size: 0.8rem; color: var(--ink-soft); text-transform: uppercase; font-weight: 600;">Dormant Warnings</span>
+    <p style="font-size: 1.8rem; font-weight: 700; margin: 4px 0 0 0; color: {% if dormant_count > 0 %}var(--warning){% else %}var(--success){% endif %};">
+      {{ dormant_count }}
+    </p>
+  </div>
+  <div class="card" style="padding: 16px;">
+    <span style="font-size: 0.8rem; color: var(--ink-soft); text-transform: uppercase; font-weight: 600;">Resolved / Climaxed</span>
+    <p style="font-size: 1.8rem; font-weight: 700; margin: 4px 0 0 0; color: var(--success);">{{ resolved_count }}</p>
+  </div>
+</div>
+
+{% if matrix_threads %}
+  <div class="card" style="padding: 0; overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+      <thead>
+        <tr style="background: var(--paper-deep); border-bottom: 2px solid var(--hairline);">
+          <th style="padding: 14px 18px;">Thread &amp; Mystery</th>
+          <th style="padding: 14px 18px;">Lifespan (Setup ➔ Payoff)</th>
+          <th style="padding: 14px 18px;">Dormancy Health</th>
+          <th style="padding: 14px 18px;">Chekhov's Guns (Artifacts)</th>
+          <th style="padding: 14px 18px;">Foreshadowing Breadcrumbs</th>
+          <th style="padding: 14px 18px; text-align: right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in matrix_threads %}
+          {% with t=row.thread %}
+            <tr style="border-bottom: 1px solid var(--hairline-soft); {% if row.is_dormant %}background: rgba(234, 179, 8, 0.04);{% endif %}">
+              <!-- Thread Title & Status -->
+              <td style="padding: 16px 18px; vertical-align: top; max-width: 240px;">
+                <div style="font-weight: 600; color: var(--ink); margin-bottom: 4px;">{{ t.title }}</div>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                  <span class="badge badge-subtle" style="font-size: 0.72rem;">{{ t.get_category_display }}</span>
+                  <span class="badge {% if t.status == 'open' or t.status == 'progressing' %}badge-primary{% elif t.status == 'resolved' %}badge-success{% else %}badge-subtle{% endif %}" style="font-size: 0.72rem;">
+                    {{ t.get_status_display }}
+                  </span>
+                </div>
+              </td>
+
+              <!-- Lifespan Timeline -->
+              <td style="padding: 16px 18px; vertical-align: top; white-space: nowrap;">
+                <div style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem;">
+                  <span title="Setup Chapter">🌱 Ch. {{ t.setup_chapter }}</span>
+                  <span style="color: var(--ink-soft);">➔</span>
+                  <span title="Last Mentioned">📍 Ch. {{ t.last_mentioned_chapter }}</span>
+                  <span style="color: var(--ink-soft);">➔</span>
+                  <span title="Planned Payoff">{% if t.payoff_chapter %}🎯 Ch. {{ t.payoff_chapter }}{% else %}<span style="color: var(--ink-soft);">TBD</span>{% endif %}</span>
+                </div>
+                <div style="font-size: 0.76rem; color: var(--ink-soft); margin-top: 4px;">
+                  Limit: {{ t.dormancy_threshold }} chs
+                </div>
+              </td>
+
+              <!-- Dormancy Health Status -->
+              <td style="padding: 16px 18px; vertical-align: top; white-space: nowrap;">
+                {% if t.status == 'resolved' or t.status == 'abandoned' %}
+                  <span class="badge badge-subtle">Archived</span>
+                {% elif row.is_dormant %}
+                  <span class="badge badge-warning" title="Unmentioned for {{ row.gap }} chapters">
+                    ⚠️ Dormant ({{ row.gap }} chs unmentioned)
+                  </span>
+                {% else %}
+                  <span class="badge badge-success" title="Active within {{ row.gap }} chapters">
+                    ✓ Active ({{ row.gap }} chs ago)
+                  </span>
+                {% endif %}
+              </td>
+
+              <!-- Linked Chekhov's Guns -->
+              <td style="padding: 16px 18px; vertical-align: top; min-width: 180px;">
+                {% if row.linked_items %}
+                  <ul style="list-style: none; padding: 0; margin: 0 0 8px 0; font-size: 0.84rem;">
+                    {% for item in row.linked_items %}
+                      <li style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; background: var(--paper-deep); padding: 3px 8px; border-radius: 4px;">
+                        <span>🗡️ {{ item.name }} {% if item.is_destroyed %}<small style="color: var(--danger);">(Destroyed)</small>{% endif %}</span>
+                        <form method="post" style="display: inline;">
+                          {% csrf_token %}
+                          <input type="hidden" name="action" value="unlink_item">
+                          <input type="hidden" name="item_id" value="{{ item.id }}">
+                          <button type="submit" class="btn btn-quiet btn-sm" style="padding: 0 4px; font-size: 0.7rem;" title="Unlink artifact">×</button>
+                        </form>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <span style="font-size: 0.8rem; color: var(--ink-soft); font-style: italic;">No linked artifact</span>
+                {% endif %}
+
+                {% if unlinked_items %}
+                  <form method="post" style="display: flex; gap: 4px; margin-top: 6px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="link_item">
+                    <input type="hidden" name="thread_id" value="{{ t.id }}">
+                    <select name="item_id" class="form-control" style="font-size: 0.75rem; padding: 2px 6px; height: auto;">
+                      <option value="">+ Link Chekhov Item</option>
+                      {% for itm in unlinked_items %}
+                        <option value="{{ itm.id }}">{{ itm.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;">Link</button>
+                  </form>
+                {% endif %}
+              </td>
+
+              <!-- Foreshadowing Breadcrumbs -->
+              <td style="padding: 16px 18px; vertical-align: top; min-width: 220px;">
+                {% if row.breadcrumbs %}
+                  <div style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;">
+                    {% for b in row.breadcrumbs %}
+                      <div style="font-size: 0.8rem; background: var(--paper-deep); padding: 4px 8px; border-radius: 4px; border-left: 2px solid var(--primary);">
+                        <strong>Ch. {{ b.chapter_number }} [{{ b.get_breadcrumb_type_display }}]:</strong>
+                        <span>{{ b.description|truncatechars:70 }}</span>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <span style="font-size: 0.8rem; color: var(--ink-soft); font-style: italic;">No clues recorded</span>
+                {% endif %}
+              </td>
+
+              <!-- Actions (Add Breadcrumb) -->
+              <td style="padding: 16px 18px; vertical-align: top; text-align: right; white-space: nowrap;">
+                <details style="display: inline-block; text-align: left;">
+                  <summary class="btn btn-secondary btn-sm" style="font-size: 0.78rem; cursor: pointer; list-style: none;">
+                    + Add Clue
+                  </summary>
+                  <div style="position: absolute; right: 24px; z-index: 50; width: 280px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: var(--radius-card); padding: 14px; box-shadow: var(--shadow-ambient); margin-top: 6px;">
+                    <form method="post">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="add_breadcrumb">
+                      <input type="hidden" name="thread_id" value="{{ t.id }}">
+                      <div class="form-group" style="margin-bottom: 8px;">
+                        <label class="form-label" style="font-size: 0.78rem;">Chapter Number</label>
+                        <input type="number" name="chapter_number" value="{{ current_chapter_num }}" min="1" class="form-control" style="font-size: 0.8rem; padding: 4px 8px;">
+                      </div>
+                      <div class="form-group" style="margin-bottom: 8px;">
+                        <label class="form-label" style="font-size: 0.78rem;">Breadcrumb Type</label>
+                        <select name="breadcrumb_type" class="form-control" style="font-size: 0.8rem; padding: 4px 8px;">
+                          <option value="clue">Foreshadowing / Clue</option>
+                          <option value="progression">Progress / Escalation</option>
+                          <option value="twist">Revelation / Complication</option>
+                          <option value="payoff">Climax / Payoff</option>
+                        </select>
+                      </div>
+                      <div class="form-group" style="margin-bottom: 10px;">
+                        <label class="form-label" style="font-size: 0.78rem;">Description</label>
+                        <input type="text" name="description" placeholder="e.g. Alaric finds ancient journal entry" class="form-control" required style="font-size: 0.8rem; padding: 4px 8px;">
+                      </div>
+                      <button type="submit" class="btn btn-primary btn-sm btn-block" style="font-size: 0.8rem;">Save Breadcrumb</button>
+                    </form>
+                  </div>
+                </details>
+              </td>
+            </tr>
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="quiet-empty" style="text-align: center; padding: 48px 16px;">
+    <span style="font-size: 2.4rem; display: block; margin-bottom: 8px;">🧶</span>
+    <h3 style="margin-bottom: 6px;">No narrative plot threads established</h3>
+    <p style="color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 16px;">Create your first dramatic promise, mystery, or quest in the ledger.</p>
+    <a href="{% url 'taletomo:project_threads' project.id %}" class="btn btn-primary">Go to Threads Ledger</a>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -347,10 +347,67 @@ class ContinuityChecker:
                                     source_references=[
                                         f"Chapter {chapter.chapter_number}: '{snippet.strip()}'"
                                     ],
-                                    suggested_action=f"Remove use of '{item.name}' or clarify it is a replica/memory.",
-                                )
+                                    )
                             )
                             break
+
+        # 7. Character Voice & Dialogue Stylometry Check
+        from taletomo.consistency.voice import DialogueExtractor, DialogueVoiceAuditor
+
+        chars_with_style = list(Character.objects.filter(project=project).exclude(dialogue_style=""))
+        if chars_with_style:
+            dialogue_turns = DialogueExtractor.extract_dialogue(prose, chars_with_style)
+            for turn in dialogue_turns:
+                if turn.character:
+                    voice_issues = DialogueVoiceAuditor.audit_turn(turn, project_genre=project.genre or "Fantasy")
+                    for issue in voice_issues:
+                        findings.append(
+                            ContinuityFinding(
+                                project=project,
+                                chapter=chapter,
+                                draft_id=clean_id,
+                                category=FindingCategory.VOICE,
+                                severity=FindingSeverity.WARNING,
+                                confidence=0.85,
+                                claim=issue["claim"],
+                                conflicting_evidence=[issue["evidence"]],
+                                source_references=[f"Chapter {chapter.chapter_number}: \"{turn.quote[:80]}\""],
+                                suggested_action=issue["suggestion"],
+                            )
+                        )
+
+        # 8. Dormant Plot Threads & Forgotten Promises Check
+        from taletomo.canon.models import PlotThread
+
+        active_threads = PlotThread.objects.filter(
+            project=project,
+            status__in=[PlotThread.Status.OPEN, PlotThread.Status.PROGRESSING],
+        )
+        for thread in active_threads:
+            if thread.setup_chapter < chapter.chapter_number and thread.is_dormant(chapter.chapter_number):
+                gap = thread.chapters_since_mention(chapter.chapter_number)
+                findings.append(
+                    ContinuityFinding(
+                        project=project,
+                        chapter=chapter,
+                        draft_id=clean_id,
+                        category=FindingCategory.PLOT,
+                        severity=FindingSeverity.WARNING,
+                        confidence=0.9,
+                        claim=(
+                            f"Dormant narrative thread: '{thread.title}' ({thread.get_category_display()}) "
+                            f"has not been mentioned for {gap} chapters (dormancy limit: {thread.dormancy_threshold})."
+                        ),
+                        conflicting_evidence=[
+                            f"PlotThread '{thread.title}' setup in Ch {thread.setup_chapter}, last mentioned in Ch {thread.last_mentioned_chapter}"
+                        ],
+                        source_references=[f"Chapter {chapter.chapter_number}"],
+                        suggested_action=(
+                            f"Advance, foreshadow, or mention '{thread.title}' in upcoming scenes, "
+                            f"or mark the thread resolved/abandoned if no longer active."
+                        ),
+                    )
+                )
 
         return findings
 

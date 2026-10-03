@@ -88,6 +88,39 @@
           </ol>
         </section>
       {% endif %}
+
+      {% if chapter.plan and chapter.plan.scenes.exists %}
+        <section class="rail-section" aria-labelledby="scenes-heading" style="margin-top: 1.5rem;">
+          <div class="rail-section-heading">
+            <p class="rail-label" id="scenes-heading">SCENE WORKBENCH</p>
+            <span class="version-count">{{ chapter.plan.scenes.count }}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            {% for sc in chapter.plan.scenes.all %}
+              <div class="scene-workbench-card" style="background: var(--paper-deep); border: 1px solid var(--hairline); border-radius: var(--radius-field); padding: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <strong style="font-size: 0.82rem; color: var(--ink);">Scene {{ sc.scene_order }}</strong>
+                  <span style="font-size: 0.72rem; color: var(--ink-soft);">~{{ sc.estimated_words }} words</span>
+                </div>
+                <p style="font-size: 0.78rem; color: var(--ink-soft); margin: 0 0 6px 0; line-height: 1.4;">{{ sc.objective|truncatechars:65 }}</p>
+                
+                <details style="margin-top: 4px;">
+                  <summary style="font-size: 0.75rem; color: var(--primary); cursor: pointer; list-style: none;">
+                    🎲 Re-roll Scene {{ sc.scene_order }} ▾
+                  </summary>
+                  <form method="post" action="{% url 'taletomo:chapter_scene_reroll' project.id chapter.id sc.scene_order %}" style="margin-top: 8px;">
+                    {% csrf_token %}
+                    <input type="text" name="directive" placeholder="Directive (e.g. 'Add more tension', 'focus on Alaric')..." class="form-control" style="font-size: 0.75rem; padding: 4px 6px; margin-bottom: 6px;">
+                    <button type="submit" class="btn btn-secondary btn-sm btn-block" style="font-size: 0.72rem; padding: 3px 6px;" {% if chapter.status == 'locked' %}disabled{% endif %}>
+                      Re-roll Scene {{ sc.scene_order }}
+                    </button>
+                  </form>
+                </details>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
     </aside>
 
     <main class="writer-main" aria-label="Chapter manuscript and review">
@@ -188,13 +221,23 @@
                 <p style="margin: 0; font-size: 0.82rem; color: var(--ink-soft);">Highlight text in the manuscript, then choose an editorial transformation:</p>
               </div>
             </div>
-            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center;">
               <button type="button" class="btn btn-secondary copilot-chip" onclick="triggerCopilot('show_not_tell')">🎭 Show, Don't Tell</button>
               <button type="button" class="btn btn-secondary copilot-chip" onclick="triggerCopilot('sensory_immersion')">👁️ Sensory Immersion</button>
               <button type="button" class="btn btn-secondary copilot-chip" onclick="triggerCopilot('punch_up_dialogue')">💬 Punch-Up Dialogue</button>
               <button type="button" class="btn btn-secondary copilot-chip" onclick="triggerCopilot('intensify_tension')">⚡ Intensify Tension</button>
               <button type="button" class="btn btn-secondary copilot-chip" onclick="triggerCopilot('expand')">🔍 Expand Scene</button>
               <button type="button" class="btn btn-secondary copilot-chip" onclick="triggerCopilot('fix_continuity')">🩹 Fix Continuity</button>
+              <button type="button" class="btn btn-secondary copilot-chip" onclick="triggerCopilot('infill_bridge')">🌉 Infill Bridge</button>
+              <div style="display: inline-flex; align-items: center; gap: 4px; background: var(--paper-deep); padding: 2px 8px; border-radius: 20px; border: 1px solid var(--hairline);">
+                <select id="copilot-character-select" style="font-size: 0.78rem; background: transparent; border: none; color: var(--ink); outline: none;">
+                  <option value="">🎙️ Select Voice</option>
+                  {% for c in project.characters.all %}
+                    <option value="{{ c.name }}" {% if c.name == chapter.pov_character_name %}selected{% endif %}>{{ c.name }}</option>
+                  {% endfor %}
+                </select>
+                <button type="button" class="btn btn-secondary copilot-chip" style="padding: 2px 8px; font-size: 0.75rem;" onclick="triggerCopilot('voice_align')">Voice Align</button>
+              </div>
             </div>
           </div>
           
@@ -432,6 +475,9 @@ function triggerCopilot(action) {
 
   const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]") ? document.querySelector("[name=csrfmiddlewaretoken]").value : "";
 
+  const charSelect = document.getElementById("copilot-character-select");
+  const targetChar = charSelect ? charSelect.value : "";
+
   fetch("{% url 'taletomo:chapter_copilot_api' project.id chapter.id %}", {
     method: "POST",
     headers: {
@@ -444,6 +490,7 @@ function triggerCopilot(action) {
       context_before: contextBefore,
       context_after: contextAfter,
       custom_instruction: instruction,
+      target_character_name: targetChar,
     }),
   })
   .then(res => res.json())
